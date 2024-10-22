@@ -1,7 +1,11 @@
 CLEAN_FILES = # deliberately empty, so we can append below.
 CXX=g++
 LDFLAGS= -lpthread -lrt
-CXXFLAGS= -g -std=c++11 -fno-builtin-memcmp -msse -msse4.2 -pipe -fPIC
+CXXFLAGS= -g -std=c++11 -fno-builtin-memcmp -pipe -fPIC
+ifeq ($(shell uname -m), x86_64)
+    CXXFLAGS += -msse -msse4.2
+endif
+
 PROFILING_FLAGS=-pg
 ARFLAGS = rs
 OPT=
@@ -129,14 +133,17 @@ LIBRARY = $(LIBOUTPUT)/${LIBNAME}.a
 
 TESTS = test/pink_thread_test
 
-.PHONY: clean dbg static_lib all example
+.PHONY: clean dbg static_lib all rondis example
 
-all: $(LIBRARY)
+all: $(LIBRARY) rondis
 
 static_lib: $(LIBRARY)
 
 example:
 	@make -C examples PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
+
+rondis:
+	@make -C rondis PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
 
 check: $(LIBRARY)
 	@make -C test PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH)
@@ -150,6 +157,7 @@ $(LIBRARY): $(LIBOBJECTS)
 
 clean:
 	make -C ./examples clean
+	make -C ./rondis clean
 	rm -f $(LIBRARY)
 	rm -rf $(CLEAN_FILES)
 	rm -rf $(LIBOUTPUT)
