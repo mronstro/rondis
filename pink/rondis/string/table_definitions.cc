@@ -21,16 +21,17 @@ int init_key_records(NdbDictionary::Dictionary *dict)
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
     {
-        printf("Failed getting table for key table of STRING\n");
+        printf("Failed getting Ndb table %s\n", KEY_TABLE_NAME);
         return -1;
     }
+
     const NdbDictionary::Column *redis_key_col = tab->getColumn(KEY_TABLE_COL_redis_key);
     const NdbDictionary::Column *rondb_key_col = tab->getColumn(KEY_TABLE_COL_rondb_key);
     const NdbDictionary::Column *expiry_date_col = tab->getColumn(KEY_TABLE_COL_expiry_date);
     const NdbDictionary::Column *value_start_col = tab->getColumn(KEY_TABLE_COL_value_start);
     const NdbDictionary::Column *tot_value_len_col = tab->getColumn(KEY_TABLE_COL_tot_value_len);
     const NdbDictionary::Column *num_rows_col = tab->getColumn(KEY_TABLE_COL_num_rows);
-    const NdbDictionary::Column *row_state_col = tab->getColumn(KEY_TABLE_COL_row_state);
+    const NdbDictionary::Column *value_data_type_col = tab->getColumn(KEY_TABLE_COL_value_data_type);
 
     if (redis_key_col == nullptr ||
         rondb_key_col == nullptr ||
@@ -38,72 +39,35 @@ int init_key_records(NdbDictionary::Dictionary *dict)
         value_start_col == nullptr ||
         tot_value_len_col == nullptr ||
         num_rows_col == nullptr ||
-        row_state_col == nullptr)
+        value_data_type_col == nullptr)
     {
-        printf("Failed getting columns for key table of STRING\n");
+        printf("Failed getting Ndb columns for table %s\n", KEY_TABLE_NAME);
         return -1;
     }
 
-    NdbDictionary::RecordSpecification primary_redis_main_key_spec[1];
-    NdbDictionary::RecordSpecification all_redis_main_key_spec[7];
-
-    primary_redis_main_key_spec[0].column = redis_key_col;
-    primary_redis_main_key_spec[0].offset = offsetof(struct key_table, redis_key);
-    primary_redis_main_key_spec[0].nullbit_byte_offset = 0;
-    primary_redis_main_key_spec[0].nullbit_bit_in_byte = 0;
-    pk_key_record =
-        dict->createRecord(tab,
-                           primary_redis_main_key_spec,
-                           1,
-                           sizeof(primary_redis_main_key_spec[0]));
-    if (pk_key_record == nullptr)
+    std::map<const NdbDictionary::Column *, std::pair<size_t, int>> pk_lookup_column_map = {
+        {redis_key_col, {offsetof(struct key_table, redis_key), 0}},
+    };
+    if (init_record(dict, tab, pk_lookup_column_map, pk_key_record) != 0)
     {
-        printf("Failed creating record for key table of STRING\n");
+        printf("Failed creating pk-lookup record for table %s\n", KEY_TABLE_NAME);
         return -1;
     }
 
-    all_redis_main_key_spec[0].column = redis_key_col;
-    all_redis_main_key_spec[0].offset = offsetof(struct key_table, redis_key);
-    all_redis_main_key_spec[0].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[0].nullbit_bit_in_byte = 0;
+    std::map<const NdbDictionary::Column *, std::pair<size_t, int>> read_all_column_map = {
+        // TODO: Fix this one
+        // {redis_key_col, {offsetof(struct key_table, redis_key), 0}},
+        {rondb_key_col, {offsetof(struct key_table, rondb_key), 0}},
+        {expiry_date_col, {offsetof(struct key_table, expiry_date), 1}},
+        {value_start_col, {offsetof(struct key_table, value_start), 0}},
+        {tot_value_len_col, {offsetof(struct key_table, tot_value_len), 0}},
+        {num_rows_col, {offsetof(struct key_table, num_rows), 0}},
+        {value_data_type_col, {offsetof(struct key_table, value_data_type), 0}}
+    };
 
-    all_redis_main_key_spec[1].column = rondb_key_col;
-    all_redis_main_key_spec[1].offset = offsetof(struct key_table, rondb_key);
-    all_redis_main_key_spec[1].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[1].nullbit_bit_in_byte = 0;
-
-    all_redis_main_key_spec[2].column = expiry_date_col;
-    all_redis_main_key_spec[2].offset = offsetof(struct key_table, expiry_date);
-    all_redis_main_key_spec[2].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[2].nullbit_bit_in_byte = 1;
-
-    all_redis_main_key_spec[3].column = value_start_col;
-    all_redis_main_key_spec[3].offset = offsetof(struct key_table, value_start);
-    all_redis_main_key_spec[3].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[3].nullbit_bit_in_byte = 0;
-
-    all_redis_main_key_spec[4].column = tot_value_len_col;
-    all_redis_main_key_spec[4].offset = offsetof(struct key_table, tot_value_len);
-    all_redis_main_key_spec[4].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[4].nullbit_bit_in_byte = 0;
-
-    all_redis_main_key_spec[5].column = num_rows_col;
-    all_redis_main_key_spec[5].offset = offsetof(struct key_table, num_rows);
-    all_redis_main_key_spec[5].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[5].nullbit_bit_in_byte = 0;
-
-    all_redis_main_key_spec[6].column = row_state_col;
-    all_redis_main_key_spec[6].offset = offsetof(struct key_table, row_state);
-    all_redis_main_key_spec[6].nullbit_byte_offset = 0;
-    all_redis_main_key_spec[6].nullbit_bit_in_byte = 0;
-
-    entire_key_record = dict->createRecord(tab,
-                                           all_redis_main_key_spec,
-                                           8,
-                                           sizeof(all_redis_main_key_spec[0]));
-    if (entire_key_record == nullptr)
+    if (init_record(dict, tab, read_all_column_map, entire_key_record) != 0)
     {
-        printf("Failed creating record for key table of STRING\n");
+        printf("Failed creating read-all cols record for table %s\n", KEY_TABLE_NAME);
         return -1;
     }
     return 0;
@@ -111,12 +75,13 @@ int init_key_records(NdbDictionary::Dictionary *dict)
 
 int init_value_records(NdbDictionary::Dictionary *dict)
 {
-    const NdbDictionary::Table *tab = dict->getTable("redis_key_value");
+    const NdbDictionary::Table *tab = dict->getTable(VALUE_TABLE_NAME);
     if (tab == nullptr)
     {
-        printf("Failed getting table for value table of STRING\n");
+        printf("Failed getting Ndb table %s\n", VALUE_TABLE_NAME);
         return -1;
     }
+
     const NdbDictionary::Column *rondb_key_col = tab->getColumn(VALUE_TABLE_COL_rondb_key);
     const NdbDictionary::Column *ordinal_col = tab->getColumn(VALUE_TABLE_COL_ordinal);
     const NdbDictionary::Column *value_col = tab->getColumn(VALUE_TABLE_COL_value);
@@ -124,59 +89,55 @@ int init_value_records(NdbDictionary::Dictionary *dict)
         ordinal_col == nullptr ||
         value_col == nullptr)
     {
-        printf("Failed getting columns for value table of STRING\n");
+        printf("Failed getting Ndb columns for table %s\n", VALUE_TABLE_NAME);
         return -1;
     }
 
-    NdbDictionary::RecordSpecification primary_redis_key_value_spec[2];
-    NdbDictionary::RecordSpecification all_redis_key_value_spec[3];
+    std::map<const NdbDictionary::Column *, std::pair<size_t, int>> pk_lookup_column_map = {
+        {rondb_key_col, {offsetof(struct value_table, rondb_key), 0}},
+        {ordinal_col, {offsetof(struct value_table, ordinal), 0}}};
 
-    primary_redis_key_value_spec[0].column = rondb_key_col;
-    primary_redis_key_value_spec[0].offset = offsetof(struct value_table, rondb_key);
-    primary_redis_key_value_spec[0].nullbit_byte_offset = 0;
-    primary_redis_key_value_spec[0].nullbit_bit_in_byte = 0;
-
-    primary_redis_key_value_spec[1].column = ordinal_col;
-    primary_redis_key_value_spec[1].offset = offsetof(struct value_table, ordinal);
-    primary_redis_key_value_spec[1].nullbit_byte_offset = 0;
-    primary_redis_key_value_spec[1].nullbit_bit_in_byte = 0;
-
-    pk_value_record = dict->createRecord(tab,
-                                         primary_redis_key_value_spec,
-                                         2,
-                                         sizeof(primary_redis_key_value_spec[0]));
-    if (pk_value_record == nullptr)
+    if (init_record(dict, tab, pk_lookup_column_map, pk_value_record) != 0)
     {
-        printf("Failed creating record for value table of STRING\n");
+        printf("Failed creating pk-lookup record for table %s\n", VALUE_TABLE_NAME);
         return -1;
     }
 
-    all_redis_key_value_spec[0].column = rondb_key_col;
-    all_redis_key_value_spec[0].offset = offsetof(struct value_table, rondb_key);
-    all_redis_key_value_spec[0].nullbit_byte_offset = 0;
-    all_redis_key_value_spec[0].nullbit_bit_in_byte = 0;
+    std::map<const NdbDictionary::Column *, std::pair<size_t, int>> read_all_column_map = {
+        {rondb_key_col, {offsetof(struct value_table, rondb_key), 0}},
+        {ordinal_col, {offsetof(struct value_table, ordinal), 0}},
+        {value_col, {offsetof(struct value_table, value), 0}}};
 
-    all_redis_key_value_spec[1].column = ordinal_col;
-    all_redis_key_value_spec[1].offset = offsetof(struct value_table, ordinal);
-    all_redis_key_value_spec[1].nullbit_byte_offset = 0;
-    all_redis_key_value_spec[1].nullbit_bit_in_byte = 0;
-
-    all_redis_key_value_spec[2].column = value_col;
-    all_redis_key_value_spec[2].offset = offsetof(struct value_table, value);
-    all_redis_key_value_spec[2].nullbit_byte_offset = 0;
-    all_redis_key_value_spec[2].nullbit_bit_in_byte = 0;
-
-    entire_value_record = dict->createRecord(tab,
-                                             all_redis_key_value_spec,
-                                             3,
-                                             sizeof(all_redis_key_value_spec[0]));
-    if (entire_value_record == nullptr)
+    if (init_record(dict, tab, read_all_column_map, entire_value_record) != 0)
     {
-        printf("Failed creating record for value table of STRING\n");
+        printf("Failed creating read-all cols record for table %s\n", VALUE_TABLE_NAME);
         return -1;
     }
 
     return 0;
+}
+
+int init_record(NdbDictionary::Dictionary *dict,
+                const NdbDictionary::Table *tab,
+                std::map<const NdbDictionary::Column *, std::pair<size_t, int>> column_info_map,
+                NdbRecord *&record)
+{
+    NdbDictionary::RecordSpecification col_specs[column_info_map.size()];
+    int i = 0;
+    for (const auto &entry : column_info_map)
+    {
+        col_specs[i].column = entry.first;
+        col_specs[i].offset = entry.second.first;
+        col_specs[i].nullbit_byte_offset = 0;
+        col_specs[i].nullbit_bit_in_byte = entry.second.second;
+        ++i;
+    }
+    record = dict->createRecord(tab,
+                                col_specs,
+                                column_info_map.size(),
+                                sizeof(col_specs[0]));
+
+    return (record == nullptr) ? -1 : 0;
 }
 
 int init_string_records(NdbDictionary::Dictionary *dict)
