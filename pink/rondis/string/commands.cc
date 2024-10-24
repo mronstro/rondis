@@ -9,9 +9,9 @@
 #include "../common.h"
 #include "table_definitions.h"
 
-void rondb_get_command(const pink::RedisCmdArgsType &argv,
-                       std::string *response,
-                       int fd)
+void rondb_get_command(Ndb *ndb,
+                       const pink::RedisCmdArgsType &argv,
+                       std::string *response)
 {
     const char *key_str = argv[1].c_str();
     Uint32 key_len = argv[1].size();
@@ -21,7 +21,6 @@ void rondb_get_command(const pink::RedisCmdArgsType &argv,
         return;
     }
 
-    Ndb *ndb = rondb_ndb[0][0];
     const NdbDictionary::Dictionary *dict = ndb->getDictionary();
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
@@ -59,28 +58,37 @@ void rondb_get_command(const pink::RedisCmdArgsType &argv,
     }
 }
 
-void rondb_set_command(const pink::RedisCmdArgsType &argv,
-                       std::string *response,
-                       int fd)
+void rondb_set_command(
+    Ndb *ndb,
+    const pink::RedisCmdArgsType &argv,
+    std::string *response)
 {
-    Ndb *ndb = rondb_ndb[0][0];
-    const char *key_str = argv[1].c_str();
     Uint32 key_len = argv[1].size();
-    const char *value_str = argv[2].c_str();
-    Uint32 value_len = argv[2].size();
     if (key_len > MAX_KEY_VALUE_LEN)
     {
         failed_large_key(response);
         return;
     }
+
+    const char *key_str = argv[1].c_str();
+    const char *value_str = argv[2].c_str();
+    Uint32 value_len = argv[2].size();
+
     const NdbDictionary::Dictionary *dict = ndb->getDictionary();
+    if (dict == nullptr)
+    {
+        append_response(response,
+                        "RonDB Error: Failed to get Ndb dictionary:",
+                        dict->getNdbError().code);
+        return;
+    }
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
     {
         failed_create_table(response, dict->getNdbError().code);
         return;
     }
-    printf("Kilroy came here III\n");
+
     NdbTransaction *trans = ndb->startTransaction(tab, key_str, key_len);
     if (trans == nullptr)
     {
