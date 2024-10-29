@@ -9,6 +9,20 @@
 #include "../common.h"
 #include "table_definitions.h"
 
+/*
+    A successful GET will return in this format:
+        $5
+        Hello
+    where:
+    - $ indicates a Bulk String reply
+    - 5 is the length of the value ("Hello" has 5 characters)
+    - Hello is the actual value stored at the key
+    Special cases:
+        $-1
+    The key does not exist.
+        $0
+    The key exists but has no value (empty string).
+*/
 void rondb_get_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
@@ -17,7 +31,7 @@ void rondb_get_command(Ndb *ndb,
     Uint32 key_len = argv[1].size();
     if (key_len > MAX_KEY_VALUE_LEN)
     {
-        failed_large_key(response);
+        assign_generic_err_to_response(response, REDIS_KEY_TOO_LARGE);
         return;
     }
 
@@ -25,7 +39,9 @@ void rondb_get_command(Ndb *ndb,
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
     {
-        failed_create_table(response, dict->getNdbError().code);
+        assign_ndb_err_to_response(response,
+                                   FAILED_CREATE_TABLE_OBJECT,
+                                   dict->getNdbError().code);
         return;
     }
 
@@ -66,7 +82,7 @@ void rondb_set_command(
     Uint32 key_len = argv[1].size();
     if (key_len > MAX_KEY_VALUE_LEN)
     {
-        failed_large_key(response);
+        assign_generic_err_to_response(response, REDIS_KEY_TOO_LARGE);
         return;
     }
 
@@ -77,22 +93,26 @@ void rondb_set_command(
     const NdbDictionary::Dictionary *dict = ndb->getDictionary();
     if (dict == nullptr)
     {
-        append_response(response,
-                        "RonDB Error: Failed to get Ndb dictionary:",
-                        dict->getNdbError().code);
+        assign_ndb_err_to_response(response,
+                                   FAILED_GET_DICT,
+                                   dict->getNdbError().code);
         return;
     }
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
     {
-        failed_create_table(response, dict->getNdbError().code);
+        assign_ndb_err_to_response(response,
+                                   FAILED_CREATE_TABLE_OBJECT,
+                                   dict->getNdbError().code);
         return;
     }
 
     NdbTransaction *trans = ndb->startTransaction(tab, key_str, key_len);
     if (trans == nullptr)
     {
-        failed_create_transaction(response, ndb->getNdbError().code);
+        assign_ndb_err_to_response(response,
+                                   FAILED_CREATE_TXN_OBJECT,
+                                   ndb->getNdbError().code);
         return;
     }
     char varsize_param[EXTENSION_VALUE_LEN + 500];
@@ -142,7 +162,9 @@ void rondb_set_command(
             {
                 if (execute_no_commit(trans, ret_code, false) != 0)
                 {
-                    failed_execute(response, ret_code);
+                    assign_ndb_err_to_response(response,
+                                               FAILED_EXEC_TXN,
+                                               ret_code);
                     return;
                 }
             }
