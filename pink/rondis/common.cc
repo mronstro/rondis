@@ -5,29 +5,6 @@
 
 #include "common.h"
 
-int execute_no_commit(NdbTransaction *trans, int &ret_code, bool allow_fail)
-{
-    printf("Execute NoCommit\n");
-    if (trans->execute(NdbTransaction::NoCommit) != 0)
-    {
-        ret_code = trans->getNdbError().code;
-        return -1;
-    }
-    return 0;
-}
-
-int execute_commit(Ndb *ndb, NdbTransaction *trans, int &ret_code)
-{
-    // printf("Execute transaction\n");
-    if (trans->execute(NdbTransaction::Commit) != 0)
-    {
-        ret_code = trans->getNdbError().code;
-        return -1;
-    }
-    ndb->closeTransaction(trans);
-    return 0;
-}
-
 /**
  * @brief Writes formatted data to a buffer.
  *
@@ -57,11 +34,11 @@ int write_formatted(char *buffer, int bufferSize, const char *format, ...)
 void assign_ndb_err_to_response(
     std::string *response,
     const char *app_str,
-    Uint32 error_code)
+    NdbError error)
 {
     char buf[512];
-    write_formatted(buf, sizeof(buf), "-ERR NDB(%u) %s\r\n", error_code, app_str);
-    printf("%s", buf);
+    write_formatted(buf, sizeof(buf), "-ERR %s; NDB(%u) %s\r\n", app_str, error.code, error.message);
+    std::cout << buf;
     response->assign(buf);
 }
 
@@ -71,6 +48,6 @@ void assign_generic_err_to_response(
 {
     char buf[512];
     write_formatted(buf, sizeof(buf), "-ERR %s\r\n", app_str);
-    printf("%s", buf);
+    std::cout << buf;
     response->assign(buf);
 }
