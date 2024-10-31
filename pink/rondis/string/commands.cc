@@ -136,7 +136,7 @@ void rondb_set_command(
     const NdbDictionary::Dictionary *dict = ndb->getDictionary();
     if (dict == nullptr)
     {
-        assign_ndb_err_to_response(response, FAILED_GET_DICT, dict->getNdbError());
+        assign_ndb_err_to_response(response, FAILED_GET_DICT, ndb->getNdbError());
         return;
     }
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
@@ -189,6 +189,7 @@ void rondb_set_command(
                               &varsize_param[0]);
     if (ret_code != 0)
     {
+        // Often unnecessary since it already failed to commit
         ndb->closeTransaction(trans);
         if (ret_code != FOREIGN_KEY_RESTRICT_ERROR)
         {
@@ -237,40 +238,15 @@ void rondb_set_command(
     }
     printf("Inserting %d value rows\n", num_value_rows);
 
-    Uint32 remaining_len = value_len - INLINE_VALUE_LEN;
-    const char *start_value_ptr = &value_str[INLINE_VALUE_LEN];
-    for (Uint32 ordinal = 0; ordinal < num_value_rows; ordinal++)
-    {
-        Uint32 this_value_len = remaining_len;
-        if (remaining_len > EXTENSION_VALUE_LEN)
-        {
-            this_value_len = EXTENSION_VALUE_LEN;
-        }
-        if (create_value_row(response,
-                             ndb,
-                             dict,
-                             trans,
-                             start_value_ptr,
-                             rondb_key,
-                             this_value_len,
-                             ordinal,
-                             &varsize_param[0]) != 0)
-        {
-            ndb->closeTransaction(trans);
-            return;
-        }
-        remaining_len -= this_value_len;
-        start_value_ptr += this_value_len;
-    }
-
-    if (trans->execute(NdbTransaction::Commit,
-                       NdbOperation::AbortOnError) != 0 ||
-        trans->getNdbError().code != 0)
-    {
-        assign_ndb_err_to_response(response, FAILED_EXEC_TXN, trans->getNdbError());
-        return;
-    }
-
-    response->append("+OK\r\n");
+    create_all_value_rows(response,
+                          ndb,
+                          dict,
+                          trans,
+                          rondb_key,
+                          value_str,
+                          value_len,
+                          num_value_rows,
+                          &varsize_param[0]);
+    ndb->closeTransaction(trans);
     return;
 }
