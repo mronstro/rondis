@@ -30,7 +30,7 @@ SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
 
 ifndef RONDB_PATH
   $(warning Warning: missing rondb path)
-  exit 1
+  $(error Exit due to missing RONDB_PATH)
 endif
 RONDB_INCLUDE_DIR=$(RONDB_PATH)/include/storage/ndb
 ifeq ($(UNAME_S),Darwin)
