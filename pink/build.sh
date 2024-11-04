@@ -11,8 +11,8 @@ if test -z $SLASH_PATH; then
 fi
 
 if [[ ! -d $SLASH_PATH ]]; then
-  mkdir -p $SLASH_PATH
-  git clone https://github.com/Qihoo360/slash.git $SLASH_PATH
+  echo "Slash library is not available"
+  exit 1
 fi
 cd $SLASH_PATH/slash && make
 

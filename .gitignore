@@ -60,7 +60,6 @@ pink/test/pink_thread_test
 
 # Others
 pink/tags
-pink/third
 *.d.*
 *.d
 
