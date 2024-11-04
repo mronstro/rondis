@@ -33,9 +33,6 @@ SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
 CXXFLAGS+= -I$(PINK_INCLUDE_DIR) -I$(SLASH_INCLUDE_DIR)
 
 DEP_LIBS = $(PINK_LIBRARY) $(SLASH_LIBRARY)
-ifeq ($(UNAME_S),Darwin)
-DEP_LIBS+= /Users/mikael/rondb_2410_install/lib/libprotobuf.dylib
-endif
 LDFLAGS := $(DEP_LIBS) $(LDFLAGS)
 
 bg_thread: bg_thread.cc
