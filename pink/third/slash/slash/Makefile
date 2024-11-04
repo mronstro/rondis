@@ -1,7 +1,12 @@
 CLEAN_FILES = # deliberately empty, so we can append below.
 CXX=g++
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS= -lpthread
+else
 LDFLAGS= -lpthread -lrt
-CXXFLAGS= -g -std=c++11 -fno-builtin-memcmp -pipe -fPIC
+endif
+CXXFLAGS= -g -std=c++17 -fno-builtin-memcmp -pipe -fPIC
 ifeq ($(shell uname -m), x86_64)
     CXXFLAGS += -msse -msse4.2
 endif
