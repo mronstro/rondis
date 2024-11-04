@@ -14,7 +14,7 @@ NdbRecord *entire_key_record = nullptr;
 NdbRecord *pk_value_record = nullptr;
 NdbRecord *entire_value_record = nullptr;
 
-static void set_length(char *buf, Uint32 key_len) {
+static void set_length(char *buf, Uint32 key_len) {
   Uint8 *ptr = (Uint8*)buf;
   ptr[0] = (Uint8)(key_len & 255);
   ptr[1] = (Uint8)(key_len >> 8);

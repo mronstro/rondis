@@ -193,24 +193,24 @@ int PinkEpoll::PinkPoll(const int timeout) {
     }
   }
 #else
-  int retval = epoll_wait(epfd_, events_, PINK_MAX_CLIENTS, timeout);
+  int retval = epoll_wait(epfd_, events_.data(), PINK_MAX_CLIENTS, timeout);
   if (retval > 0) {
     num_events = retval;
     for (int i = 0; i < num_events; i++) {
       int mask = 0;
-      firedevent_[i].fd = (events_ + i)->data.fd;
+      firedevent_[i].fd = events_[i].data.fd;
 
-      if ((events_ + i)->events & EPOLLIN) {
+      if (events_[i].events & EPOLLIN) {
         mask |= kRead;
       }
-      if ((events_ + i)->events & EPOLLOUT) {
+      if (events_[i].events & EPOLLOUT) {
         mask |= kWrite;
       }
-      if ((events_ + i)->events & EPOLLERR) {
-        mask |= kErr;
+      if (events_[i].events & EPOLLERR) {
+        mask |= kError;
       }
-      if ((events_ + i)->events & EPOLLHUP) {
-        mask |= kErr;
+      if (events_[i].events & EPOLLHUP) {
+        mask |= kError;
       }
       firedevent_[i].mask = mask;
     }
