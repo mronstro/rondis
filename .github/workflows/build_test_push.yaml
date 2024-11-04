@@ -14,8 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - run: brew install protobuf
+
       - name: Build
-        run: cd pink && make example
+        run: cd pink && make static_lib
 
   build-and-run-redis-benchmark:
     needs: [build-pink-macos]
