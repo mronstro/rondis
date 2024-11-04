@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 {
     int port = 6379;
     char *connect_string = "localhost:13000";
-    int worker_threads = 1;
+    int worker_threads = 2;
     if (argc != 4)
     {
         printf("Not receiving 3 arguments, just using defaults\n");

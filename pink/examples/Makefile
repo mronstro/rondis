@@ -1,6 +1,11 @@
 CXX=g++
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS= -lpthread
+else
 LDFLAGS= -lpthread -lrt -lprotobuf
-CXXFLAGS=-O2 -std=c++11 -fno-builtin-memcmp
+endif
+CXXFLAGS=-O2 -std=c++17 -fno-builtin-memcmp
 ifeq ($(shell uname -m), x86_64)
     CXXFLAGS += -msse -msse4.2
 endif
@@ -28,6 +33,9 @@ SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
 CXXFLAGS+= -I$(PINK_INCLUDE_DIR) -I$(SLASH_INCLUDE_DIR)
 
 DEP_LIBS = $(PINK_LIBRARY) $(SLASH_LIBRARY)
+ifeq ($(UNAME_S),Darwin)
+DEP_LIBS+= /Users/mikael/rondb_2410_install/lib/libprotobuf.dylib
+endif
 LDFLAGS := $(DEP_LIBS) $(LDFLAGS)
 
 bg_thread: bg_thread.cc

@@ -6,8 +6,6 @@
 #ifndef PINK_INCLUDE_SERVER_THREAD_H_
 #define PINK_INCLUDE_SERVER_THREAD_H_
 
-#include <sys/epoll.h>
-
 #include <set>
 #include <vector>
 #include <memory>

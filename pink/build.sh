@@ -19,4 +19,4 @@ cd $SLASH_PATH/slash && make
 # Compile pink
 cd $PINK_PATH
 make SLASH_PATH=$SLASH_PATH
-cd examples && make SLASH_PATH=$SLASH_PATH
+cd rondis && make SLASH_PATH=$SLASH_PATH

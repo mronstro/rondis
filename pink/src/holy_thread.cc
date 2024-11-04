@@ -69,7 +69,7 @@ std::shared_ptr<PinkConn> HolyThread::MoveConnOut(int fd) {
   if (iter != conns_.end()) {
     int fd = iter->first;
     conn = iter->second;
-    pink_epoll_->PinkDelEvent(fd);
+    pink_epoll_->PinkDelEvent(fd, 0);
     conns_.erase(iter);
   }
   return conn;
@@ -113,7 +113,7 @@ void HolyThread::HandleNewConn(const int connfd, const std::string &ip_port) {
     conns_[connfd] = tc;
   }
 
-  pink_epoll_->PinkAddEvent(connfd, EPOLLIN);
+  pink_epoll_->PinkAddEvent(connfd, PinkEpoll::kRead);
 }
 
 void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
@@ -126,13 +126,13 @@ void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
   {
     slash::ReadLock l(&rwlock_);
     if ((iter = conns_.find(pfe->fd)) == conns_.end()) {
-      pink_epoll_->PinkDelEvent(pfe->fd);
+      pink_epoll_->PinkDelEvent(pfe->fd, 0);
       return;
     }
   }
   in_conn = iter->second;
   if (async_) {
-    if (pfe->mask & EPOLLIN) {
+    if (pfe->mask & PinkEpoll::kRead) {
       ReadStatus read_status = in_conn->GetRequest();
       struct timeval now;
       gettimeofday(&now, nullptr);
@@ -146,11 +146,11 @@ void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
         should_close = 1;
       }
     }
-    if ((pfe->mask & EPOLLOUT) && in_conn->is_reply()) {
+    if ((pfe->mask & PinkEpoll::kWrite) && in_conn->is_reply()) {
       WriteStatus write_status = in_conn->SendReply();
       if (write_status == kWriteAll) {
         in_conn->set_is_reply(false);
-        pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);
+        pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kRead);
       } else if (write_status == kWriteHalf) {
         return;
       } else if (write_status == kWriteError) {
@@ -158,7 +158,7 @@ void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
       }
     }
   } else {
-    if (pfe->mask & EPOLLIN) {
+    if (pfe->mask & PinkEpoll::kRead) {
       ReadStatus getRes = in_conn->GetRequest();
       struct timeval now;
       gettimeofday(&now, nullptr);
@@ -167,16 +167,16 @@ void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
         // kReadError kReadClose kFullError kParseError kDealError
         should_close = 1;
       } else if (in_conn->is_reply()) {
-        pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLOUT);
+        pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kWrite);
       } else {
         return;
       }
     }
-    if (pfe->mask & EPOLLOUT) {
+    if (pfe->mask & PinkEpoll::kWrite) {
       WriteStatus write_status = in_conn->SendReply();
       if (write_status == kWriteAll) {
         in_conn->set_is_reply(false);
-        pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);
+        pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kRead);
       } else if (write_status == kWriteHalf) {
         return;
       } else if (write_status == kWriteError) {
@@ -184,8 +184,8 @@ void HolyThread::HandleConnEvent(PinkFiredEvent *pfe) {
       }
     }
   }
-  if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP) || should_close) {
-    pink_epoll_->PinkDelEvent(pfe->fd);
+  if ((pfe->mask & PinkEpoll::kError) || should_close) {
+    pink_epoll_->PinkDelEvent(pfe->fd, 0);
     CloseFd(in_conn);
     in_conn = nullptr;
 
@@ -292,7 +292,7 @@ bool HolyThread::KillConn(const std::string& ip_port) {
 }
 
 void HolyThread::ProcessNotifyEvents(const pink::PinkFiredEvent* pfe) {
-  if (pfe->mask & EPOLLIN) {
+  if (pfe->mask & PinkEpoll::kRead) {
     char bb[2048];
     int32_t nread = read(pink_epoll_->notify_receive_fd(), bb, 2048);
     //  log_info("notify_received bytes %d\n", nread);
@@ -304,7 +304,7 @@ void HolyThread::ProcessNotifyEvents(const pink::PinkFiredEvent* pfe) {
         std::string ip_port = ti.ip_port();
         int fd = ti.fd();
         if (ti.notify_type() == pink::kNotiWrite) {
-          pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT | EPOLLIN);
+          pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kRead | PinkEpoll::kWrite);
         } else if (ti.notify_type() == pink::kNotiClose) {
           log_info("receive noti close\n");
           std::shared_ptr<pink::PinkConn> conn = get_conn(fd);

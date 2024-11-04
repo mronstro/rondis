@@ -1,6 +1,11 @@
 CLEAN_FILES = # deliberately empty, so we can append below.
 CXX=g++
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS= -lpthread
+else
 LDFLAGS= -lpthread -lrt
+endif
 CXXFLAGS= -g -std=c++11 -fno-builtin-memcmp -pipe -fPIC
 ifeq ($(shell uname -m), x86_64)
     CXXFLAGS += -msse -msse4.2
@@ -25,6 +30,7 @@ endif
 ifeq ($(ENABLE_SSL),1)
   OPT += -D__ENABLE_SSL
 endif
+OPT += -std=c++17
 
 # compile with -O2 if for release
 # if we're compiling for release, compile without debug code (-DNDEBUG) and

@@ -6,8 +6,6 @@
 #ifndef PINK_INCLUDE_PUBSUB_H_
 #define PINK_INCLUDE_PUBSUB_H_
 
-#include <sys/epoll.h>
-
 #include <string>
 #include <functional>
 #include <queue>
@@ -29,7 +27,7 @@
 namespace pink {
 
 class PinkEpoll;
-class PinkFiredEvent;
+struct PinkFiredEvent;
 class PinkConn;
 
 class PubSubThread : public Thread {

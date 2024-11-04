@@ -1,5 +1,10 @@
 CXX=g++
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS= -lpthread
+else
 LDFLAGS= -lpthread -lrt -lprotobuf
+endif
 CXXFLAGS=-O2 -std=c++17 -fno-builtin-memcmp
 ifeq ($(shell uname -m), x86_64)
     CXXFLAGS += -msse -msse4.2
@@ -28,11 +33,18 @@ ifndef RONDB_PATH
   exit 1
 endif
 RONDB_INCLUDE_DIR=$(RONDB_PATH)/include/storage/ndb
+ifeq ($(UNAME_S),Darwin)
+RONDB_LIBRARY=$(RONDB_PATH)/lib/libndbclient.dylib
+else
 RONDB_LIBRARY=$(RONDB_PATH)/lib/libndbclient.so
+endif
 
 CXXFLAGS+= -I$(PINK_INCLUDE_DIR) -I$(SLASH_INCLUDE_DIR) -I$(RONDB_INCLUDE_DIR)
 
 DEP_LIBS = $(PINK_LIBRARY) $(SLASH_LIBRARY) $(RONDB_LIBRARY)
+ifeq ($(UNAME_S),Darwin)
+DEP_LIBS+= /opt/homebrew/lib/libprotobuf.dylib
+endif
 LDFLAGS := $(DEP_LIBS) $(LDFLAGS)
 
 # Use find to locate all .cc files in subdirectories

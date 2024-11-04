@@ -6,8 +6,6 @@
 #ifndef PINK_SRC_WORKER_THREAD_H_
 #define PINK_SRC_WORKER_THREAD_H_
 
-#include <sys/epoll.h>
-
 #include <string>
 #include <functional>
 #include <map>
@@ -27,7 +25,7 @@ namespace pink {
 
 class PinkItem;
 class PinkEpoll;
-class PinkFiredEvent;
+struct PinkFiredEvent;
 class PinkConn;
 class ConnFactory;
 

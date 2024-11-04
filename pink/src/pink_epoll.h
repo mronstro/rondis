@@ -6,7 +6,14 @@
 #ifndef PINK_SRC_PINK_EPOLL_H_
 #define PINK_SRC_PINK_EPOLL_H_
 #include <queue>
+#include <vector>
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
+#else
 #include "sys/epoll.h"
+#endif
 
 #include "pink/src/pink_item.h"
 #include "slash/include/slash_mutex.h"
@@ -21,10 +28,14 @@ struct PinkFiredEvent {
 class PinkEpoll {
  public:
   static const int kUnlimitedQueue = -1;
+  static const int kRead = 1;
+  static const int kWrite = 2;
+  static const int kError = 4;
+
   PinkEpoll(int queue_limit = kUnlimitedQueue);
   ~PinkEpoll();
   int PinkAddEvent(const int fd, const int mask);
-  int PinkDelEvent(const int fd);
+  int PinkDelEvent(const int fd, int mask);
   int PinkModEvent(const int fd, const int old_mask, const int mask);
 
   int PinkPoll(const int timeout);
@@ -44,8 +55,11 @@ class PinkEpoll {
 
  private:
   int epfd_;
-  struct epoll_event *events_;
-  int timeout_;
+#ifdef __APPLE__
+  std::vector<struct kevent> events_;
+#else
+  std::vector<struct epoll_event> events_;
+#endif
   PinkFiredEvent *firedevent_;
 
   /*

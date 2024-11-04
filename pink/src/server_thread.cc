@@ -151,7 +151,7 @@ int ServerThread::InitHandle() {
 
     // init pool
     pink_epoll_->PinkAddEvent(
-        socket_p->sockfd(), EPOLLIN | EPOLLERR | EPOLLHUP);
+        socket_p->sockfd(), PinkEpoll::kRead | PinkEpoll::kError);
     server_fds_.insert(socket_p->sockfd());
   }
   return kSuccess;
@@ -219,7 +219,7 @@ void *ServerThread::ThreadMain() {
        * Handle server event
        */
       if (server_fds_.find(fd) != server_fds_.end()) {
-        if (pfe->mask & EPOLLIN) {
+        if (pfe->mask & PinkEpoll::kRead) {
           connfd = accept(fd, (struct sockaddr *) &cliaddr, &clilen);
           if (connfd == -1) {
             log_warn("accept error, errno numberis %d, error reason %s",
@@ -256,7 +256,7 @@ void *ServerThread::ThreadMain() {
            */
           HandleNewConn(connfd, ip_port);
 
-        } else if (pfe->mask & (EPOLLHUP | EPOLLERR)) {
+        } else if (pfe->mask & PinkEpoll::kError) {
           /*
            * this branch means there is error on the listen fd
            */
