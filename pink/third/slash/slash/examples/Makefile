@@ -1,6 +1,9 @@
 CXX=g++
 LDFLAGS= -lpthread -lrt
-CXXFLAGS= -O2 -std=c++11 -fno-builtin-memcmp -msse -msse4.2
+CXXFLAGS= -O2 -std=c++11 -fno-builtin-memcmp
+ifeq ($(shell uname -m), x86_64)
+    CXXFLAGS += -msse -msse4.2
+endif
 
 .PHONY: clean libslash
 
