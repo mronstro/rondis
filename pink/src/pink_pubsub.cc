@@ -59,7 +59,7 @@ PubSubThread::PubSubThread()
   fcntl(msg_pfd_[0], F_SETFD, fcntl(msg_pfd_[0], F_GETFD) | FD_CLOEXEC);
   fcntl(msg_pfd_[1], F_SETFD, fcntl(msg_pfd_[1], F_GETFD) | FD_CLOEXEC);
 
-  pink_epoll_->PinkAddEvent(msg_pfd_[0], EPOLLIN | EPOLLERR | EPOLLHUP);
+  pink_epoll_->PinkAddEvent(msg_pfd_[0], PinkEpoll::kRead | PinkEpoll::kWrite | PinkEpoll::kError);
 }
 
 PubSubThread::~PubSubThread() {
@@ -70,7 +70,7 @@ PubSubThread::~PubSubThread() {
 void PubSubThread::MoveConnOut(std::shared_ptr<PinkConn> conn) {
   RemoveConn(conn);
 
-  pink_epoll_->PinkDelEvent(conn->fd());
+  pink_epoll_->PinkDelEvent(conn->fd(), 0);
   {
     slash::WriteLock l(&rwlock_);
     conns_.erase(conn->fd());
@@ -383,17 +383,17 @@ void *PubSubThread::ThreadMain() {
     for (int i = 0; i < nfds; i++) {
       pfe = (pink_epoll_->firedevent()) + i;
       if (pfe->fd == pink_epoll_->notify_receive_fd()) {        // New connection comming
-        if (pfe->mask & EPOLLIN) {
+        if (pfe->mask & PinkEpoll::kRead) {
           read(pink_epoll_->notify_receive_fd(), triger, 1);
           {
             PinkItem ti = pink_epoll_->notify_queue_pop();
             if (ti.notify_type() == kNotiClose) {
             } else if (ti.notify_type() == kNotiEpollout) {
-              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT);
+              pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kWrite);
             } else if (ti.notify_type() == kNotiEpollin) {
-              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLIN);
+              pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kRead);
             } else if (ti.notify_type() == kNotiEpolloutAndEpollin) {
-              pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT | EPOLLIN);
+              pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kRead | PinkEpoll::kWrite);
             } else if (ti.notify_type() == kNotiWait) {
               // do not register events
               pink_epoll_->PinkAddEvent(ti.fd(), 0);
@@ -403,7 +403,7 @@ void *PubSubThread::ThreadMain() {
         }
       }
       if (pfe->fd == msg_pfd_[0]) {           // Publish message
-        if (pfe->mask & EPOLLIN) {
+        if (pfe->mask & PinkEpoll::kRead) {
           read(msg_pfd_[0], triger, 1);
           std::string channel, msg;
           int32_t receivers = 0;
@@ -425,7 +425,7 @@ void *PubSubThread::ThreadMain() {
                 WriteStatus write_status = it->second[i]->SendReply();
                 if (write_status == kWriteHalf) {
                   pink_epoll_->PinkModEvent(it->second[i]->fd(),
-                                            EPOLLIN, EPOLLOUT);
+                                            PinkEpoll::kRead, PinkEpoll::kWrite);
                 } else if (write_status == kWriteError) {
                   channel_mutex_.Unlock();
 
@@ -455,7 +455,7 @@ void *PubSubThread::ThreadMain() {
                 WriteStatus write_status = it->second[i]->SendReply();
                 if (write_status == kWriteHalf) {
                   pink_epoll_->PinkModEvent(it->second[i]->fd(),
-                                            EPOLLIN, EPOLLOUT);
+                                            PinkEpoll::kRead, PinkEpoll::kWrite);
                 } else if (write_status == kWriteError) {
                   pattern_mutex_.Unlock();
 
@@ -486,18 +486,18 @@ void *PubSubThread::ThreadMain() {
           slash::ReadLock l(&rwlock_);
           std::map<int, std::shared_ptr<ConnHandle> >::iterator iter = conns_.find(pfe->fd);
           if (iter == conns_.end()) {
-            pink_epoll_->PinkDelEvent(pfe->fd);
+            pink_epoll_->PinkDelEvent(pfe->fd, 0);
             continue;
           }
           in_conn = iter->second->conn;
         }
 
         // Send reply
-        if (pfe->mask & EPOLLOUT && in_conn->is_ready_to_reply()) {
+        if (pfe->mask & PinkEpoll::kWrite && in_conn->is_ready_to_reply()) {
           WriteStatus write_status = in_conn->SendReply();
           if (write_status == kWriteAll) {
             in_conn->set_is_reply(false);
-            pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);  // Remove EPOLLOUT
+            pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kRead);  // Remove EPOLLOUT
           } else if (write_status == kWriteHalf) {
             continue;  //  send all write buffer,
                        //  in case of next GetRequest()
@@ -508,7 +508,7 @@ void *PubSubThread::ThreadMain() {
         }
 
         // Client request again
-        if (!should_close && pfe->mask & EPOLLIN) {
+        if (!should_close && pfe->mask & PinkEpoll::kRead) {
           ReadStatus getRes = in_conn->GetRequest();
           // Do not response to client when we leave the pub/sub status here
           if (getRes != kReadAll && getRes != kReadHalf) {
@@ -519,7 +519,7 @@ void *PubSubThread::ThreadMain() {
             if (write_status == kWriteAll) {
               in_conn->set_is_reply(false);
             } else if (write_status == kWriteHalf) {
-              pink_epoll_->PinkModEvent(pfe->fd, EPOLLIN, EPOLLOUT);
+              pink_epoll_->PinkModEvent(pfe->fd, PinkEpoll::kRead, PinkEpoll::kWrite);
             } else if (write_status == kWriteError) {
               should_close = true;
             }
@@ -528,7 +528,7 @@ void *PubSubThread::ThreadMain() {
           }
         }
         // Error
-        if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP) || should_close) {
+        if ((pfe->mask & PinkEpoll::kError) || should_close) {
           MoveConnOut(in_conn);
           CloseFd(in_conn);
           in_conn = nullptr;

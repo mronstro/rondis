@@ -1,6 +1,11 @@
 CXX=g++
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS= -lpthread
+else
 LDFLAGS= -lpthread -lrt -lprotobuf
-CXXFLAGS=-O2 -std=c++11 -fno-builtin-memcmp
+endif
+CXXFLAGS=-O2 -std=c++17 -fno-builtin-memcmp
 ifeq ($(shell uname -m), x86_64)
     CXXFLAGS += -msse -msse4.2
 endif

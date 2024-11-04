@@ -16,6 +16,13 @@
 
 namespace slash {
 
+int port_fdatasync(int fd) {
+#ifdef __APPLE__
+  return fcntl(fd, F_FULLFSYNC, 0);
+#else
+  return fdatasync(fd);
+#endif
+}
 /*
  *  Set the resource limits of a process
  */
@@ -348,7 +355,11 @@ class PosixSequentialFile: public SequentialFile {
 
   virtual Status Read(size_t n, Slice* result, char* scratch) override {
     Status s;
+#ifdef __APPLE__
+    size_t r = fread(scratch, 1, n, file_);
+#else
     size_t r = fread_unlocked(scratch, 1, n, file_);
+#endif
 
     *result = Slice(scratch, r);
 
@@ -449,10 +460,12 @@ class PosixMmapFile : public WritableFile
 
   bool MapNewRegion() {
     assert(base_ == NULL);
+#ifndef __APPLE__
     if (posix_fallocate(fd_, file_offset_, map_size_) != 0) {
       log_warn("ftruncate error");
       return false;
     }
+#endif
     //log_info("map_size %d fileoffset %llu", map_size_, file_offset_);
     void* ptr = mmap(NULL, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED,
                      fd_, file_offset_);
@@ -551,7 +564,7 @@ class PosixMmapFile : public WritableFile
     if (pending_sync_) {
       // Some unmapped data was not synced
       pending_sync_ = false;
-      if (fdatasync(fd_) < 0) {
+      if (port_fdatasync(fd_) < 0) {
         s = IOError(filename_, errno);
       }
     }
@@ -611,9 +624,11 @@ class MmapRWFile : public RWFile
    }
 
    bool DoMapRegion() {
+#ifndef __APPLE__
      if (posix_fallocate(fd_, 0, map_size_) != 0) {
        return false;
      }
+#endif
      void* ptr = mmap(NULL, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
      if (ptr == MAP_FAILED) {
        return false;
@@ -718,7 +733,7 @@ class PosixRandomRWFile : public RandomRWFile {
  }
 
  virtual Status Sync() override {
-   if (pending_sync_ && fdatasync(fd_) < 0) {
+   if (pending_sync_ && port_fdatasync(fd_) < 0) {
      return IOError(filename_, errno);
    }
    pending_sync_ = false;

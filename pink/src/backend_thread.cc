@@ -100,7 +100,7 @@ Status BackendThread::Close(const int fd) {
 }
 
 Status BackendThread::ProcessConnectStatus(PinkFiredEvent* pfe, int* should_close) {
-  if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP)) {
+  if (pfe->mask & PinkEpoll::kError) {
     *should_close = 1;
     return Status::Corruption("EPOLLERR or EPOLLHUP");
   }
@@ -119,7 +119,7 @@ Status BackendThread::ProcessConnectStatus(PinkFiredEvent* pfe, int* should_clos
 }
 
 void BackendThread::SetWaitConnectOnEpoll(int sockfd) {
-  pink_epoll_->PinkAddEvent(sockfd, EPOLLIN | EPOLLOUT);
+  pink_epoll_->PinkAddEvent(sockfd, PinkEpoll::kRead | PinkEpoll::kWrite);
   connecting_fds_.insert(sockfd);
 }
 
@@ -183,7 +183,7 @@ Status BackendThread::Connect(const std::string& dst_ip, const int dst_port, int
     }
 
     AddConnection(dst_ip, dst_port, sockfd);
-    pink_epoll_->PinkAddEvent(sockfd, EPOLLIN | EPOLLOUT);
+    pink_epoll_->PinkAddEvent(sockfd, PinkEpoll::kRead | PinkEpoll::kWrite);
     struct sockaddr_in laddr;
     socklen_t llen = sizeof(laddr);
     getsockname(sockfd, (struct sockaddr*) &laddr, &llen);
@@ -248,7 +248,7 @@ void BackendThread::DoCronTask() {
     if (keepalive_timeout_ > 0 &&
         (now.tv_sec - conn->last_interaction().tv_sec > keepalive_timeout_)) {
       log_info("Do cron task del fd %d\n", conn->fd());
-      pink_epoll_->PinkDelEvent(conn->fd());
+      pink_epoll_->PinkDelEvent(conn->fd(), 0);
       close(conn->fd());
       handle_->FdTimeoutHandle(conn->fd(), conn->ip_port());
       if (conns_.count(conn->fd())) {
@@ -315,7 +315,7 @@ void BackendThread::NotifyClose(const int fd) {
 }
 
 void BackendThread::ProcessNotifyEvents(const PinkFiredEvent* pfe) {
-  if (pfe->mask & EPOLLIN) {
+  if (pfe->mask & PinkEpoll::kRead) {
     char bb[2048];
     int32_t nread = read(pink_epoll_->notify_receive_fd(), bb, 2048);
     if (nread == 0) {
@@ -332,7 +332,7 @@ void BackendThread::ProcessNotifyEvents(const PinkFiredEvent* pfe) {
             continue;
           } else {
             // connection exist
-            pink_epoll_->PinkModEvent(fd, 0, EPOLLOUT | EPOLLIN);
+            pink_epoll_->PinkModEvent(fd, 0, PinkEpoll::kRead | PinkEpoll::kWrite);
           }
           {
           auto iter = to_send_.find(fd);
@@ -348,7 +348,7 @@ void BackendThread::ProcessNotifyEvents(const PinkFiredEvent* pfe) {
           }
         } else if (ti.notify_type() == kNotiClose) {
           log_info("received kNotiClose\n");
-          pink_epoll_->PinkDelEvent(fd);
+          pink_epoll_->PinkDelEvent(fd, 0);
           CloseFd(fd);
           conns_.erase(fd);
           connecting_fds_.erase(fd);
@@ -413,7 +413,7 @@ void *BackendThread::ThreadMain() {
       if (iter == conns_.end()) {
         mu_.Unlock();
         log_info("fd %d not found in fd_conns\n", pfe->fd);
-        pink_epoll_->PinkDelEvent(pfe->fd);
+        pink_epoll_->PinkDelEvent(pfe->fd, 0);
         continue;
       }
       mu_.Unlock();
@@ -428,11 +428,11 @@ void *BackendThread::ThreadMain() {
         connecting_fds_.erase(pfe->fd);
       }
 
-      if (!should_close && (pfe->mask & EPOLLOUT) && conn->is_reply()) {
+      if (!should_close && (pfe->mask & PinkEpoll::kWrite) && conn->is_reply()) {
         WriteStatus write_status = conn->SendReply();
         conn->set_last_interaction(now);
         if (write_status == kWriteAll) {
-          pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);
+          pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kRead);
           conn->set_is_reply(false);
         } else if (write_status == kWriteHalf) {
           continue;
@@ -442,11 +442,11 @@ void *BackendThread::ThreadMain() {
         }
       }
 
-      if (!should_close && (pfe->mask & EPOLLIN)) {
+      if (!should_close && (pfe->mask & PinkEpoll::kRead)) {
         ReadStatus read_status = conn->GetRequest();
         conn->set_last_interaction(now);
         if (read_status == kReadAll) {
-          // pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLOUT);
+          // pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kWrite);
         } else if (read_status == kReadHalf) {
           continue;
         } else {
@@ -455,10 +455,10 @@ void *BackendThread::ThreadMain() {
         }
       }
 
-      if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP) || should_close) {
+      if ((pfe->mask & PinkEpoll::kError) || should_close) {
         {
           log_info("close connection %d reason %d %d\n", pfe->fd, pfe->mask, should_close);
-          pink_epoll_->PinkDelEvent(pfe->fd);
+          pink_epoll_->PinkDelEvent(pfe->fd, 0);
           CloseFd(conn);
           mu_.Lock();
           conns_.erase(pfe->fd);

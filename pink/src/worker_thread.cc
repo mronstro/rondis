@@ -58,7 +58,7 @@ std::shared_ptr<PinkConn> WorkerThread::MoveConnOut(int fd) {
   if (iter != conns_.end()) {
     int fd = iter->first;
     conn = iter->second;
-    pink_epoll_->PinkDelEvent(fd);
+    pink_epoll_->PinkDelEvent(fd, 0);
     conns_.erase(iter);
   }
   return conn;
@@ -116,7 +116,7 @@ void *WorkerThread::ThreadMain() {
     for (int i = 0; i < nfds; i++) {
       pfe = (pink_epoll_->firedevent()) + i;
       if (pfe->fd == pink_epoll_->notify_receive_fd()) {
-        if (pfe->mask & EPOLLIN) {
+        if (pfe->mask & PinkEpoll::kRead) {
           int32_t nread = read(pink_epoll_->notify_receive_fd(), bb, 2048);
           if (nread == 0) {
             continue;
@@ -144,15 +144,15 @@ void *WorkerThread::ThreadMain() {
                   slash::WriteLock l(&rwlock_);
                   conns_[ti.fd()] = tc;
                 }
-                pink_epoll_->PinkAddEvent(ti.fd(), EPOLLIN);
+                pink_epoll_->PinkAddEvent(ti.fd(), PinkEpoll::kRead);
               } else if (ti.notify_type() == kNotiClose) {
                 // should close?
               } else if (ti.notify_type() == kNotiEpollout) {
-                pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT);
+                pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kWrite);
               } else if (ti.notify_type() == kNotiEpollin) {
-                pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLIN);
+                pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kRead);
               } else if (ti.notify_type() == kNotiEpolloutAndEpollin) {
-                pink_epoll_->PinkModEvent(ti.fd(), 0, EPOLLOUT | EPOLLIN);
+                pink_epoll_->PinkModEvent(ti.fd(), 0, PinkEpoll::kRead | PinkEpoll::kWrite);
               } else if (ti.notify_type() == kNotiWait) {
                 // do not register events
                 pink_epoll_->PinkAddEvent(ti.fd(), 0);
@@ -173,17 +173,17 @@ void *WorkerThread::ThreadMain() {
           slash::ReadLock l(&rwlock_);
           std::map<int, std::shared_ptr<PinkConn>>::iterator iter = conns_.find(pfe->fd);
           if (iter == conns_.end()) {
-            pink_epoll_->PinkDelEvent(pfe->fd);
+            pink_epoll_->PinkDelEvent(pfe->fd, 0);
             continue;
           }
           in_conn = iter->second;
         }
 
-        if ((pfe->mask & EPOLLOUT) && in_conn->is_reply()) {
+        if ((pfe->mask & PinkEpoll::kWrite) && in_conn->is_reply()) {
           WriteStatus write_status = in_conn->SendReply();
           in_conn->set_last_interaction(now);
           if (write_status == kWriteAll) {
-            pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLIN);
+            pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kRead);
             in_conn->set_is_reply(false);
             if (in_conn->IsClose()) {
                  should_close = 1;
@@ -195,11 +195,11 @@ void *WorkerThread::ThreadMain() {
           }
         }
 
-        if (!should_close && (pfe->mask & EPOLLIN)) {
+        if (!should_close && (pfe->mask & PinkEpoll::kRead)) {
           ReadStatus read_status = in_conn->GetRequest();
           in_conn->set_last_interaction(now);
           if (read_status == kReadAll) {
-            pink_epoll_->PinkModEvent(pfe->fd, 0, EPOLLOUT);
+            pink_epoll_->PinkModEvent(pfe->fd, 0, PinkEpoll::kWrite);
             // Wait for the conn complete asynchronous task and
             // Mod Event to EPOLLOUT
           } else if (read_status == kReadHalf) {
@@ -209,8 +209,8 @@ void *WorkerThread::ThreadMain() {
           }
         }
 
-        if ((pfe->mask & EPOLLERR) || (pfe->mask & EPOLLHUP) || should_close) {
-          pink_epoll_->PinkDelEvent(pfe->fd);
+        if ((pfe->mask & PinkEpoll::kError) || should_close) {
+          pink_epoll_->PinkDelEvent(pfe->fd, 0);
           CloseFd(in_conn);
           in_conn = NULL;
           {
