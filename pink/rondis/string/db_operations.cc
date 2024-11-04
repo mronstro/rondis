@@ -14,6 +14,20 @@ NdbRecord *entire_key_record = nullptr;
 NdbRecord *pk_value_record = nullptr;
 NdbRecord *entire_value_record = nullptr;
 
+static void set_length(char *buf, Uint32 key_len) {
+  Uint8 *ptr = (Uint8*)buf;
+  ptr[0] = (Uint8)(key_len & 255);
+  ptr[1] = (Uint8)(key_len >> 8);
+}
+
+static Uint32 get_length(char *buf) {
+  Uint8 *ptr = (Uint8*)buf;
+  Uint8 low = ptr[0];
+  Uint8 high = ptr[1];
+  Uint32 len32 = Uint32(low) + Uint32(256) * Uint32(high);
+  return len32;
+}
+
 int create_key_row(std::string *response,
                    Ndb *ndb,
                    const NdbDictionary::Table *tab,
@@ -141,8 +155,7 @@ int delete_key_row(std::string *response,
     }
     del_op->deleteTuple();
     memcpy(&buf[2], key_str, key_len);
-    buf[0] = key_len & 255;
-    buf[1] = key_len >> 8;
+    set_length(buf, key_len);
     del_op->equal(KEY_TABLE_COL_redis_key, buf);
 
     if (del_op->getNdbError().code != 0)
@@ -242,8 +255,7 @@ void write_data_to_key_op(NdbOperation *ndb_op,
                           char *buf)
 {
     memcpy(&buf[2], key_str, key_len);
-    buf[0] = key_len & 255;
-    buf[1] = key_len >> 8;
+    set_length(buf, key_len);
     ndb_op->equal(KEY_TABLE_COL_redis_key, buf);
 
     if (rondb_key == 0)
@@ -265,9 +277,7 @@ void write_data_to_key_op(NdbOperation *ndb_op,
         this_value_len = INLINE_VALUE_LEN;
     }
     memcpy(&buf[2], value_str, this_value_len);
-    Uint8 *ptr = (Uint8 *)buf;
-    ptr[0] = (Uint8)(this_value_len & 255);
-    ptr[1] = (Uint8)(this_value_len >> 8);
+    set_length(buf, this_value_len);
     ndb_op->setValue(KEY_TABLE_COL_value_start, buf);
 }
 
@@ -301,9 +311,7 @@ int create_value_row(std::string *response,
     op->equal(VALUE_TABLE_COL_rondb_key, rondb_key);
     op->equal(VALUE_TABLE_COL_ordinal, ordinal);
     memcpy(&buf[2], start_value_ptr, this_value_len);
-    Uint8 *ptr = (Uint8 *)buf;
-    ptr[0] = (Uint8)(this_value_len & 255);
-    ptr[1] = (Uint8)(this_value_len >> 8);
+    set_length(buf, this_value_len);
     op->setValue(VALUE_TABLE_COL_value, buf);
     {
         if (op->getNdbError().code != 0)
@@ -512,9 +520,7 @@ int read_batched_value_rows(std::string *response,
     for (Uint32 i = 0; i < num_rows_to_read; i++)
     {
         // Transfer char pointer to response's string
-        Uint8 low = (Uint8)value_rows[i].value[0];
-        Uint8 high = (Uint8)value_rows[i].value[1];
-        Uint32 row_value_len = Uint32(low) + (Uint32(256) * Uint32(high));
+        Uint32 row_value_len = get_length((char*)&value_rows->value[0]);
         response->append((const char *)&value_rows[i].value[2], row_value_len);
     }
     return 0;
@@ -576,9 +582,7 @@ int get_complex_key_row(std::string *response,
     response->append(header_buf);
 
     // Append inline value to response
-    Uint8 low = (Uint8)key_row->value_start[0];
-    Uint8 high = (Uint8)key_row->value_start[1];
-    Uint32 inline_value_len = Uint32(low) + (Uint32(256) * Uint32(high));
+    Uint32 inline_value_len = get_length((char*)&key_row->value_start[0]);
     response->append((const char *)&key_row->value_start[2], inline_value_len);
 
     int ret_code = get_value_rows(response,
