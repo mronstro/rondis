@@ -100,7 +100,6 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                         int worker_id)
 {
     // First check non-ndb commands
-    print_args(argv);
     if (argv[0] == "ping")
     {
         if (argv.size() != 1)
