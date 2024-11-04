@@ -29,14 +29,17 @@ EOF
     
     # GET the value
     local result=$(redis-cli GET "$key")
+
+    local expected_hash=$(echo -n "$value" | sha256sum | awk '{print $1}')
+    local actual_hash=$(echo -n "$result" | sha256sum | awk '{print $1}')
     
     # Check if the retrieved value matches the expected value
-    if [[ "$result" == "$value" ]]; then
+    if [[ "$expected_hash" == "$actual_hash" ]]; then
         echo "PASS: $key with value length ${#value}"
     else
-        echo "FAIL: $key with value length ${#value}"
-        echo "Expected: $value"
-        echo "Got: $result"
+        echo "FAIL: $key with value length ${#value}; got length ${#result}"
+        echo "Expected hash:    $expected_hash"
+        echo "Received hash:    $actual_hash"
         exit 1
     fi
     echo
@@ -47,7 +50,7 @@ generate_random_chars() {
   local random_string=""
 
   while [ "${#random_string}" -lt "$length" ]; do
-    random_string+=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "$length")
+    random_string+=$(head /dev/urandom | LC_CTYPE=C tr -dc 'a-zA-Z0-9' | head -c "$length")
   done
 
   echo "${random_string:0:$length}"
@@ -64,12 +67,8 @@ set_and_get "$KEY:empty" ""
 echo "Testing small string..."
 set_and_get "$KEY:small" "hello"
 
-# Too large values seem to fail due to the network buffer size
 # Minimal amount to create value rows: 30000
-# TODO: Increase this as soon as GH actions allows it:
-# for NUM_CHARS in 100 10000 30000 50000 80000 100000; do
-
-for NUM_CHARS in 100 10000; do
+for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
     echo "Testing string with $NUM_CHARS characters..."
     test_value=$(generate_random_chars $NUM_CHARS)
     set_and_get "$KEY:$NUM_CHARS" "$test_value"

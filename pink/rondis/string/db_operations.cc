@@ -265,8 +265,9 @@ void write_data_to_key_op(NdbOperation *ndb_op,
         this_value_len = INLINE_VALUE_LEN;
     }
     memcpy(&buf[2], value_str, this_value_len);
-    buf[0] = this_value_len & 255;
-    buf[1] = this_value_len >> 8;
+    Uint8 *ptr = (Uint8 *)buf;
+    ptr[0] = (Uint8)(this_value_len & 255);
+    ptr[1] = (Uint8)(this_value_len >> 8);
     ndb_op->setValue(KEY_TABLE_COL_value_start, buf);
 }
 
@@ -300,11 +301,11 @@ int create_value_row(std::string *response,
     op->equal(VALUE_TABLE_COL_rondb_key, rondb_key);
     op->equal(VALUE_TABLE_COL_ordinal, ordinal);
     memcpy(&buf[2], start_value_ptr, this_value_len);
-    buf[0] = this_value_len & 255;
-    buf[1] = this_value_len >> 8;
+    Uint8 *ptr = (Uint8 *)buf;
+    ptr[0] = (Uint8)(this_value_len & 255);
+    ptr[1] = (Uint8)(this_value_len >> 8);
     op->setValue(VALUE_TABLE_COL_value, buf);
     {
-        int ret_code = op->getNdbError().code;
         if (op->getNdbError().code != 0)
         {
             assign_ndb_err_to_response(response, FAILED_DEFINE_OP, op->getNdbError());
@@ -356,7 +357,7 @@ int create_all_value_rows(std::string *response,
         assign_ndb_err_to_response(response, FAILED_EXEC_TXN, trans->getNdbError());
         return -1;
     }
-    
+
     response->append("+OK\r\n");
     return 0;
 }
@@ -408,13 +409,15 @@ int get_simple_key_row(std::string *response,
     {
         return 0;
     }
-    char buf[20];
-    int len = write_formatted(buf,
-                              sizeof(buf),
-                              "$%u\r\n",
-                              key_row->tot_value_len);
-    response->reserve(key_row->tot_value_len + len + 3);
-    response->append(buf);
+    char header_buf[20];
+    int header_len = write_formatted(header_buf,
+                                     sizeof(header_buf),
+                                     "$%u\r\n",
+                                     key_row->tot_value_len);
+
+    // The total length of the expected response
+    response->reserve(header_len + key_row->tot_value_len + 2);
+    response->append(header_buf);
     response->append((const char *)&key_row->value_start[2], key_row->tot_value_len);
     response->append("\r\n");
     /*
@@ -442,54 +445,77 @@ int get_value_rows(std::string *response,
         return -1;
     }
 
-    // Break up fetching large values to avoid blocking the network for other reads
-    const int ROWS_PER_READ = 2;
+    // This is rounded up
+    Uint32 num_read_batches = (num_rows + ROWS_PER_READ - 1) / ROWS_PER_READ;
+    for (Uint32 batch = 0; batch < num_read_batches; batch++)
+    {
+        Uint32 start_ordinal = batch * ROWS_PER_READ;
+        Uint32 num_rows_to_read = std::min(ROWS_PER_READ, num_rows - start_ordinal);
+
+        bool is_last_batch = (batch == (num_read_batches - 1));
+        NdbTransaction::ExecType commit_type = is_last_batch ? NdbTransaction::Commit : NdbTransaction::NoCommit;
+
+        if (read_batched_value_rows(response,
+                                    trans,
+                                    rondb_key,
+                                    num_rows_to_read,
+                                    start_ordinal,
+                                    commit_type) != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+// Break up fetching large values to avoid blocking the network for other reads
+int read_batched_value_rows(std::string *response,
+                            NdbTransaction *trans,
+                            const Uint64 rondb_key,
+                            const Uint32 num_rows_to_read,
+                            const Uint32 start_ordinal,
+                            const NdbTransaction::ExecType commit_type)
+{
     struct value_table value_rows[ROWS_PER_READ];
 
-    for (Uint32 row_index = 0; row_index < num_rows; row_index++)
+    Uint32 ordinal = start_ordinal;
+    for (Uint32 i = 0; i < num_rows_to_read; i++)
     {
-        int read_index = row_index % ROWS_PER_READ;
-        value_rows[read_index].rondb_key = rondb_key;
-        value_rows[read_index].ordinal = row_index;
-
-        bool is_last_row_of_read = (read_index == (ROWS_PER_READ - 1));
-        bool is_last_row = (row_index == (num_rows - 1));
-        if (!is_last_row_of_read && !is_last_row)
-        {
-            continue;
-        }
-
+        value_rows[i].rondb_key = rondb_key;
+        value_rows[i].ordinal = ordinal;
         const NdbOperation *read_op = trans->readTuple(
             pk_value_record,
-            (const char *)&value_rows,
+            (const char *)&value_rows[i],
             entire_value_record,
-            (char *)&value_rows,
+            (char *)&value_rows[i],
             NdbOperation::LM_CommittedRead);
         if (read_op == nullptr)
         {
             assign_ndb_err_to_response(response,
                                        FAILED_GET_OP,
                                        trans->getNdbError());
-            return RONDB_INTERNAL_ERROR;
+            return -1;
         }
+        ordinal++;
+    }
 
-        NdbTransaction::ExecType commit_type = is_last_row ? NdbTransaction::Commit : NdbTransaction::NoCommit;
-        if (trans->execute(commit_type,
-                           NdbOperation::AbortOnError) != 0)
-        {
-            assign_ndb_err_to_response(response,
-                                       FAILED_READ_KEY,
-                                       trans->getNdbError());
-            return RONDB_INTERNAL_ERROR;
-        }
+    if (trans->execute(commit_type,
+                       NdbOperation::AbortOnError) != 0 ||
+        trans->getNdbError().code != 0)
+    {
+        assign_ndb_err_to_response(response,
+                                   FAILED_READ_KEY,
+                                   trans->getNdbError());
+        return -1;
+    }
 
-        for (Uint32 i = 0; i <= read_index; i++)
-        {
-            // Transfer char pointer to response's string
-            Uint32 row_value_len =
-                value_rows[i].value[0] + (value_rows[i].value[1] << 8);
-            response->append(&value_rows[i].value[2], row_value_len);
-        }
+    for (Uint32 i = 0; i < num_rows_to_read; i++)
+    {
+        // Transfer char pointer to response's string
+        Uint8 low = (Uint8)value_rows[i].value[0];
+        Uint8 high = (Uint8)value_rows[i].value[1];
+        Uint32 row_value_len = Uint32(low) + (Uint32(256) * Uint32(high));
+        response->append((const char *)&value_rows[i].value[2], row_value_len);
     }
     return 0;
 }
@@ -529,7 +555,8 @@ int get_complex_key_row(std::string *response,
         return RONDB_INTERNAL_ERROR;
     }
     if (trans->execute(NdbTransaction::NoCommit,
-                       NdbOperation::AbortOnError) != 0)
+                       NdbOperation::AbortOnError) != 0 ||
+        trans->getNdbError().code != 0)
     {
         assign_ndb_err_to_response(response,
                                    FAILED_READ_KEY,
@@ -539,17 +566,19 @@ int get_complex_key_row(std::string *response,
 
     // Got inline value, now getting the other value rows
 
-    // Preparing response based on returned total value length
-    char buf[20];
-    int len = write_formatted(buf,
-                              sizeof(buf),
-                              "$%u\r\n",
-                              key_row->tot_value_len);
-    response->reserve(key_row->tot_value_len + len + 3);
-    response->append(buf);
+    // Writing the Redis header to the response (indicating value length)
+    char header_buf[20];
+    int header_len = write_formatted(header_buf,
+                                     sizeof(header_buf),
+                                     "$%u\r\n",
+                                     key_row->tot_value_len);
+    response->reserve(header_len + key_row->tot_value_len + 2);
+    response->append(header_buf);
 
     // Append inline value to response
-    Uint32 inline_value_len = key_row->value_start[0] + (key_row->value_start[1] << 8);
+    Uint8 low = (Uint8)key_row->value_start[0];
+    Uint8 high = (Uint8)key_row->value_start[1];
+    Uint32 inline_value_len = Uint32(low) + (Uint32(256) * Uint32(high));
     response->append((const char *)&key_row->value_start[2], inline_value_len);
 
     int ret_code = get_value_rows(response,
@@ -572,20 +601,12 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
                         Ndb *ndb,
                         std::string *response)
 {
-    if (ndb->getAutoIncrementValue(tab, rondb_key, unsigned(1024)) == 0)
+    if (ndb->getAutoIncrementValue(tab, rondb_key, unsigned(1024)) != 0)
     {
-        return 0;
+        assign_ndb_err_to_response(response,
+                                   "Failed to get autoincrement value",
+                                   ndb->getNdbError());
+        return -1;
     }
-    if (ndb->getNdbError().code == 626)
-    {
-        if (ndb->setAutoIncrementValue(tab, Uint64(1), false) == 0)
-        {
-            rondb_key = Uint64(1);
-            return 0;
-        }
-    }
-    assign_ndb_err_to_response(response,
-                               "Failed to get autoincrement value",
-                               ndb->getNdbError());
-    return -1;
+    return 0;
 }

@@ -50,8 +50,9 @@ void rondb_get_command(Ndb *ndb,
     // start copying from 3rd byte
     memcpy(&key_row.redis_key[2], key_str, key_len);
     // Length as little endian
-    key_row.redis_key[0] = key_len & 255;
-    key_row.redis_key[1] = key_len >> 8;
+    Uint8 *ptr = (Uint8 *)&key_row.redis_key[0];
+    ptr[0] = Uint8(key_len & 255);
+    ptr[1] = Uint8(key_len >> 8);
 
     // This is (usually) a local operation to calculate the correct data node, using the
     // hash of the pk value.
@@ -86,8 +87,9 @@ void rondb_get_command(Ndb *ndb,
         // start copying from 3rd byte
         memcpy(&key_row.redis_key[2], key_str, key_len);
         // Length as little endian
-        key_row.redis_key[0] = key_len & 255;
-        key_row.redis_key[1] = key_len >> 8;
+        Uint8 *ptr = (Uint8 *)&key_row.redis_key[0];
+        ptr[0] = Uint8(key_len & 255);
+        ptr[1] = Uint8(key_len >> 8);
 
         /*
             Our value uses value rows, so a more complex read is required.
@@ -154,7 +156,7 @@ void rondb_set_command(
     }
 
     char varsize_param[EXTENSION_VALUE_LEN + 500];
-    Uint32 num_value_rows = value_len / EXTENSION_VALUE_LEN;
+    Uint32 num_value_rows = 0;
     Uint64 rondb_key = 0;
 
     if (value_len > INLINE_VALUE_LEN)
@@ -168,6 +170,13 @@ void rondb_set_command(
          * deleting the row in the main table ensures that all
          * value rows are also deleted.
          */
+        Uint32 extended_value_len = value_len - INLINE_VALUE_LEN;
+        num_value_rows = extended_value_len / EXTENSION_VALUE_LEN;
+        if (extended_value_len % EXTENSION_VALUE_LEN != 0)
+        {
+            num_value_rows++;
+        }
+
         if (rondb_get_rondb_key(tab, rondb_key, ndb, response) != 0)
         {
             return;
