@@ -1,6 +1,9 @@
 #include <ndbapi/NdbApi.hpp>
 #include <ndbapi/Ndb.hpp>
 
+#ifndef RONDIS_COMMON_H
+#define RONDIS_COMMON_H
+
 #define MAX_CONNECTIONS 2
 
 #define REDIS_DB_NAME "redis"
@@ -28,3 +31,4 @@ void assign_generic_err_to_response(std::string *response, const char *app_str);
 #define REDIS_WRONG_NUMBER_OF_ARGS "wrong number of arguments for '%s' command"
 #define REDIS_NO_SUCH_KEY "$-1\r\n"
 #define REDIS_KEY_TOO_LARGE "key is too large (3000 bytes max)"
+#endif

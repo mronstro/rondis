@@ -14,13 +14,13 @@ NdbRecord *entire_key_record = nullptr;
 NdbRecord *pk_value_record = nullptr;
 NdbRecord *entire_value_record = nullptr;
 
-static void set_length(char *buf, Uint32 key_len) {
+void set_length(char *buf, Uint32 key_len) {
   Uint8 *ptr = (Uint8*)buf;
   ptr[0] = (Uint8)(key_len & 255);
   ptr[1] = (Uint8)(key_len >> 8);
 }
 
-static Uint32 get_length(char *buf) {
+Uint32 get_length(char *buf) {
   Uint8 *ptr = (Uint8*)buf;
   Uint8 low = ptr[0];
   Uint8 high = ptr[1];
@@ -613,4 +613,12 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
         return -1;
     }
     return 0;
+}
+
+void incr_key_row(std::string *response,
+                  Ndb *ndb,
+                  const NdbDictionary::Table *tab,
+                  NdbTransaction *trans,
+                  struct key_table *key_row) {
+  return;
 }
