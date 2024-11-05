@@ -182,6 +182,19 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                 assign_generic_err_to_response(response, error_message);
             }
         }
+        else if (argv[0] == "INCR")
+        {
+            if (argv.size() == 2)
+            {
+                rondb_incr_command(ndb, argv, response);
+            }
+            else
+            {
+                char error_message[256];
+                snprintf(error_message, sizeof(error_message), REDIS_WRONG_NUMBER_OF_ARGS, argv[0].c_str());
+                assign_generic_err_to_response(response, error_message);
+            }
+        }
         else
         {
             unsupported_command(argv, response);
