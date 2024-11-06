@@ -14,10 +14,7 @@ endif
 
 all: rondis
 
-ifndef PINK_PATH
-  $(warning Warning: missing pink path, using default)
-  PINK_PATH=$(CURDIR)/../..
-endif
+PINK_PATH=$(CURDIR)/../..
 PINK_INCLUDE_DIR=$(PINK_PATH)
 PINK_LIBRARY=$(PINK_PATH)/pink/lib/libpink.a
 

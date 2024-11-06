@@ -37,6 +37,7 @@ extern NdbRecord *entire_key_record;
 
 struct key_table
 {
+    Uint32 null_bits;
     char redis_key[MAX_KEY_VALUE_LEN + 2];
     Uint64 rondb_key;
     Uint32 expiry_date;
