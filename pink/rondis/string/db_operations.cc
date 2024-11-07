@@ -626,14 +626,16 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
 #define REG6 6
 #define REG7 7
 #define LABEL0 0
+#define LABEL1 1
 void incr_key_row(std::string *response,
                   Ndb *ndb,
                   const NdbDictionary::Table *tab,
                   NdbTransaction *trans,
                   struct key_table *key_row) {
 
-    const NdbDictionary::Column *value_start_col = tab->getColumn("value_start");
-    const NdbDictionary::Column *tot_value_len_col = tab->getColumn("tot_value_len");
+    const NdbDictionary::Column *value_start_col = tab->getColumn(KEY_TABLE_COL_value_start);
+    const NdbDictionary::Column *tot_value_len_col = tab->getColumn(KEY_TABLE_COL_tot_value_len);
+    const NdbDictionary::Column *rondb_key_col = tab->getColumn(KEY_TABLE_COL_rondb_key);
 
     NdbOperation::OperationOptions opts;
     std::memset(&opts, 0, sizeof(opts));
@@ -647,7 +649,7 @@ void incr_key_row(std::string *response,
      * are updated through final update.
      */
 
-    const Uint32 mask = 0x57;
+    const Uint32 mask = 0x55;
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
 
     // redis_key already set as this is the Primary key
@@ -662,7 +664,7 @@ void incr_key_row(std::string *response,
     code.load_const_u16(REG0, 4); //Memory offset 0
     code.load_const_u16(REG6, 0); //Memory offset 0
     int ret_code = code.load_op_type(REG1); // Read operation type into register 1
-    code.branch_eq_const(REG1, RONDB_INSERT, LABEL0); //Inserts go to label 1
+    code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); //Inserts go to label 1
 
     /**
      * The first 4 bytes of the memory must be kept for the Attribute header
@@ -673,9 +675,13 @@ void incr_key_row(std::string *response,
      * REG4 Old integer value after conversion
      * REG5 New integer value after increment
      * REG6 Memory offset == 0
-     * REG7 not used
+     * REG7 Value of rondb_key (should be NULL)
      */
     /* UPDATE code */
+    code.read_attr(REG7, rondb_key_col);
+    code.branch_eq_null(REG7, LABEL0);
+    code.interpret_exit_nok();
+    code.def_label(LABEL0);
     code.read_full(value_start_col, REG6, REG2); // Read value_start column
     code.load_const_u16(REG1, 6);//Memory offset 2
     code.sub_const_reg(REG3, REG2, 2);//Subtract 2 from length
@@ -691,7 +697,7 @@ void incr_key_row(std::string *response,
     code.interpret_exit_ok();
 
     /* INSERT code */
-    code.def_label(LABEL0);
+    code.def_label(LABEL1);
     code.load_const_u16(REG5, 1);
     code.load_const_u16(REG3, 1);
     code.write_interpreter_output(REG5, 0); //Write into output index 0
@@ -734,6 +740,9 @@ void incr_key_row(std::string *response,
     opts.optionsPresent |= NdbOperation::OperationOptions::OO_GET_FINAL_VALUE;
     opts.numExtraGetFinalValues = 1;
     opts.extraGetFinalValues = getvals;
+
+    if (1)
+      opts.optionsPresent |= NdbOperation::OperationOptions::OO_DIRTY_FLAG;
 
     /* Define the actual operation to be sent to RonDB data node. */
     const NdbOperation *op = trans->writeTuple(
