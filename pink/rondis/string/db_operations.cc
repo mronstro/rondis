@@ -418,10 +418,10 @@ int get_simple_key_row(std::string *response,
         return 0;
     }
     char header_buf[20];
-    int header_len = write_formatted(header_buf,
-                                     sizeof(header_buf),
-                                     "$%u\r\n",
-                                     key_row->tot_value_len);
+    int header_len = snprintf(header_buf,
+                              sizeof(header_buf),
+                              "$%u\r\n",
+                              key_row->tot_value_len);
 
     // The total length of the expected response
     response->reserve(header_len + key_row->tot_value_len + 2);
@@ -574,10 +574,10 @@ int get_complex_key_row(std::string *response,
 
     // Writing the Redis header to the response (indicating value length)
     char header_buf[20];
-    int header_len = write_formatted(header_buf,
-                                     sizeof(header_buf),
-                                     "$%u\r\n",
-                                     key_row->tot_value_len);
+    int header_len = snprintf(header_buf,
+                              sizeof(header_buf),
+                              "$%u\r\n",
+                              key_row->tot_value_len);
     response->reserve(header_len + key_row->tot_value_len + 2);
     response->append(header_buf);
 
@@ -627,6 +627,20 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
 #define REG7 7
 #define LABEL0 0
 #define LABEL1 1
+
+#define INITIAL_INT_VALUE 1
+#define INITIAL_INT_STRING '1'
+#define INITIAL_INT_STRING_LEN 1
+#define INITIAL_INT_STRING_LEN_WITH_LEN_BYTES 3
+
+#define MEMORY_OFFSET_START 0
+#define MEMORY_OFFSET_LEN_BYTES 4
+#define MEMORY_OFFSET_STRING 6
+#define NUM_LEN_BYTES 2
+#define INCREMENT_VALUE 1
+#define OUTPUT_INDEX 0
+#define RONDB_KEY_NOT_NULL_ERROR 6000
+
 void incr_key_row(std::string *response,
                   Ndb *ndb,
                   const NdbDictionary::Table *tab,
@@ -661,9 +675,9 @@ void incr_key_row(std::string *response,
     /* Define the interpreted program */
     Uint32 code_buffer[128];
     NdbInterpretedCode code(tab, &code_buffer[0], sizeof(code_buffer));
-    code.load_const_u16(REG0, 4); //Memory offset 0
-    code.load_const_u16(REG6, 0); //Memory offset 0
-    int ret_code = code.load_op_type(REG1); // Read operation type into register 1
+    code.load_const_u16(REG0, MEMORY_OFFSET_LEN_BYTES);
+    code.load_const_u16(REG6, MEMORY_OFFSET_START);
+    code.load_op_type(REG1); // Read operation type into register 1
     code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); //Inserts go to label 1
 
     /**
@@ -680,42 +694,45 @@ void incr_key_row(std::string *response,
     /* UPDATE code */
     code.read_attr(REG7, rondb_key_col);
     code.branch_eq_null(REG7, LABEL0);
-    code.interpret_exit_nok();
+    code.interpret_exit_nok(RONDB_KEY_NOT_NULL_ERROR);
     code.def_label(LABEL0);
-    code.read_full(value_start_col, REG6, REG2); // Read value_start column
-    code.load_const_u16(REG1, 6);//Memory offset 2
-    code.sub_const_reg(REG3, REG2, 2);//Subtract 2 from length
-    code.str_to_int64(REG4, REG1, REG3);//Convert string to number into register 6
-    code.add_const_reg(REG5, REG4, 1); //New integer value in register 6
-    code.int64_to_str(REG3, REG1, REG5);//Convert to string
-    code.add_const_reg(REG2, REG3, 2); //New value_start length
+    code.read_full(value_start_col, REG6, REG2);// Read value_start column
+    code.load_const_u16(REG1, MEMORY_OFFSET_STRING);
+    code.sub_const_reg(REG3, REG2, NUM_LEN_BYTES);
+    code.str_to_int64(REG4, REG1, REG3);//Convert string to number
+    code.add_const_reg(REG5, REG4, INCREMENT_VALUE);
+    code.int64_to_str(REG3, REG1, REG5);//Convert number to string
+    code.add_const_reg(REG2, REG3, NUM_LEN_BYTES); //New value_start length
     code.convert_size(REG3, REG0); //Write back length bytes in memory
 
-    code.write_interpreter_output(REG5, 0); //Write into output index 0
+    code.write_interpreter_output(REG5, OUTPUT_INDEX); //Write into output index 0
     code.write_from_mem(value_start_col, REG6, REG2); // Write to column
     code.write_attr(tot_value_len_col, REG3);
     code.interpret_exit_ok();
 
     /* INSERT code */
     code.def_label(LABEL1);
-    code.load_const_u16(REG5, 1);
-    code.load_const_u16(REG3, 1);
-    code.write_interpreter_output(REG5, 0); //Write into output index 0
+    code.load_const_u16(REG5, INITIAL_INT_VALUE);
+    code.load_const_u16(REG3, INITIAL_INT_STRING_LEN);
+    code.write_interpreter_output(REG5, OUTPUT_INDEX); //Write into output index 0
 
     Uint32 insert_value;
     Uint8 *insert_value_ptr = (Uint8*)&insert_value;
     insert_value_ptr[0] = 1; // Length is 1
     insert_value_ptr[1] = 0; // Second length byte is 0
-    insert_value_ptr[2] = '1'; //Inserts a string '1'
+    insert_value_ptr[2] = INITIAL_INT_STRING; //Inserts a string '1'
     insert_value_ptr[3] = 0;
 
-    code.load_const_mem(REG0, REG2, 3, &insert_value);// Load to memory
+    code.load_const_mem(REG0,
+                        REG2,
+                        INITIAL_INT_STRING_LEN_WITH_LEN_BYTES,
+                        &insert_value);
     code.write_from_mem(value_start_col, REG6, REG2); // Write to column
     code.write_attr(tot_value_len_col, REG3);
     code.interpret_exit_ok();
 
     /* Program end, now compile code */
-    ret_code = code.finalise();
+    int ret_code = code.finalise();
     if (ret_code != 0) {
         assign_ndb_err_to_response(response,
                                    "Failed to create Interpreted code",
@@ -765,6 +782,12 @@ void incr_key_row(std::string *response,
                        NdbOperation::AbortOnError) != 0 ||
         trans->getNdbError().code != 0)
     {
+        if (trans->getNdbError().code == RONDB_KEY_NOT_NULL_ERROR) {
+             assign_ndb_err_to_response(response,
+                                        FAILED_INCR_KEY_MULTI_ROW,
+                                        trans->getNdbError());
+            return;
+        }
         assign_ndb_err_to_response(response,
                                    FAILED_INCR_KEY,
                                    trans->getNdbError());
@@ -777,10 +800,10 @@ void incr_key_row(std::string *response,
 
     /* Send the return message to Redis client */
     char header_buf[20];
-    int header_len = write_formatted(header_buf,
-                                     sizeof(header_buf),
-                                     ":%lld\r\n",
-                                     new_incremented_value);
+    int header_len = snprintf(header_buf,
+                              sizeof(header_buf),
+                              ":%lld\r\n",
+                              new_incremented_value);
     response->assign(header_buf);
     return;
 }
