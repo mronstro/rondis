@@ -14,18 +14,20 @@ NdbRecord *entire_key_record = nullptr;
 NdbRecord *pk_value_record = nullptr;
 NdbRecord *entire_value_record = nullptr;
 
-void set_length(char *buf, Uint32 key_len) {
-  Uint8 *ptr = (Uint8*)buf;
-  ptr[0] = (Uint8)(key_len & 255);
-  ptr[1] = (Uint8)(key_len >> 8);
+void set_length(char *buf, Uint32 key_len)
+{
+    Uint8 *ptr = (Uint8 *)buf;
+    ptr[0] = (Uint8)(key_len & 255);
+    ptr[1] = (Uint8)(key_len >> 8);
 }
 
-Uint32 get_length(char *buf) {
-  Uint8 *ptr = (Uint8*)buf;
-  Uint8 low = ptr[0];
-  Uint8 high = ptr[1];
-  Uint32 len32 = Uint32(low) + Uint32(256) * Uint32(high);
-  return len32;
+Uint32 get_length(char *buf)
+{
+    Uint8 *ptr = (Uint8 *)buf;
+    Uint8 low = ptr[0];
+    Uint8 high = ptr[1];
+    Uint32 len32 = Uint32(low) + Uint32(256) * Uint32(high);
+    return len32;
 }
 
 int create_key_row(std::string *response,
@@ -520,7 +522,7 @@ int read_batched_value_rows(std::string *response,
     for (Uint32 i = 0; i < num_rows_to_read; i++)
     {
         // Transfer char pointer to response's string
-        Uint32 row_value_len = get_length((char*)&value_rows->value[0]);
+        Uint32 row_value_len = get_length((char *)&value_rows->value[0]);
         response->append((const char *)&value_rows[i].value[2], row_value_len);
     }
     return 0;
@@ -582,7 +584,7 @@ int get_complex_key_row(std::string *response,
     response->append(header_buf);
 
     // Append inline value to response
-    Uint32 inline_value_len = get_length((char*)&key_row->value_start[0]);
+    Uint32 inline_value_len = get_length((char *)&key_row->value_start[0]);
     response->append((const char *)&key_row->value_start[2], inline_value_len);
 
     int ret_code = get_value_rows(response,
@@ -645,7 +647,8 @@ void incr_key_row(std::string *response,
                   Ndb *ndb,
                   const NdbDictionary::Table *tab,
                   NdbTransaction *trans,
-                  struct key_table *key_row) {
+                  struct key_table *key_row)
+{
 
     const NdbDictionary::Column *value_start_col = tab->getColumn(KEY_TABLE_COL_value_start);
     const NdbDictionary::Column *tot_value_len_col = tab->getColumn(KEY_TABLE_COL_tot_value_len);
@@ -677,8 +680,8 @@ void incr_key_row(std::string *response,
     NdbInterpretedCode code(tab, &code_buffer[0], sizeof(code_buffer));
     code.load_const_u16(REG0, MEMORY_OFFSET_LEN_BYTES);
     code.load_const_u16(REG6, MEMORY_OFFSET_START);
-    code.load_op_type(REG1); // Read operation type into register 1
-    code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); //Inserts go to label 1
+    code.load_op_type(REG1);                          // Read operation type into register 1
+    code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); // Inserts go to label 1
 
     /**
      * The first 4 bytes of the memory must be kept for the Attribute header
@@ -696,17 +699,17 @@ void incr_key_row(std::string *response,
     code.branch_eq_null(REG7, LABEL0);
     code.interpret_exit_nok(RONDB_KEY_NOT_NULL_ERROR);
     code.def_label(LABEL0);
-    code.read_full(value_start_col, REG6, REG2);// Read value_start column
+    code.read_full(value_start_col, REG6, REG2); // Read value_start column
     code.load_const_u16(REG1, MEMORY_OFFSET_STRING);
     code.sub_const_reg(REG3, REG2, NUM_LEN_BYTES);
-    code.str_to_int64(REG4, REG1, REG3);//Convert string to number
+    code.str_to_int64(REG4, REG1, REG3); // Convert string to number
     code.add_const_reg(REG5, REG4, INCREMENT_VALUE);
-    code.int64_to_str(REG3, REG1, REG5);//Convert number to string
-    code.add_const_reg(REG2, REG3, NUM_LEN_BYTES); //New value_start length
-    code.convert_size(REG3, REG0); //Write back length bytes in memory
+    code.int64_to_str(REG3, REG1, REG5);           // Convert number to string
+    code.add_const_reg(REG2, REG3, NUM_LEN_BYTES); // New value_start length
+    code.convert_size(REG3, REG0);                 // Write back length bytes in memory
 
-    code.write_interpreter_output(REG5, OUTPUT_INDEX); //Write into output index 0
-    code.write_from_mem(value_start_col, REG6, REG2); // Write to column
+    code.write_interpreter_output(REG5, OUTPUT_INDEX); // Write into output index 0
+    code.write_from_mem(value_start_col, REG6, REG2);  // Write to column
     code.write_attr(tot_value_len_col, REG3);
     code.interpret_exit_ok();
 
@@ -714,13 +717,13 @@ void incr_key_row(std::string *response,
     code.def_label(LABEL1);
     code.load_const_u16(REG5, INITIAL_INT_VALUE);
     code.load_const_u16(REG3, INITIAL_INT_STRING_LEN);
-    code.write_interpreter_output(REG5, OUTPUT_INDEX); //Write into output index 0
+    code.write_interpreter_output(REG5, OUTPUT_INDEX); // Write into output index 0
 
     Uint32 insert_value;
-    Uint8 *insert_value_ptr = (Uint8*)&insert_value;
-    insert_value_ptr[0] = 1; // Length is 1
-    insert_value_ptr[1] = 0; // Second length byte is 0
-    insert_value_ptr[2] = INITIAL_INT_STRING; //Inserts a string '1'
+    Uint8 *insert_value_ptr = (Uint8 *)&insert_value;
+    insert_value_ptr[0] = 1;                  // Length is 1
+    insert_value_ptr[1] = 0;                  // Second length byte is 0
+    insert_value_ptr[2] = INITIAL_INT_STRING; // Inserts a string '1'
     insert_value_ptr[3] = 0;
 
     code.load_const_mem(REG0,
@@ -733,7 +736,8 @@ void incr_key_row(std::string *response,
 
     /* Program end, now compile code */
     int ret_code = code.finalise();
-    if (ret_code != 0) {
+    if (ret_code != 0)
+    {
         assign_ndb_err_to_response(response,
                                    "Failed to create Interpreted code",
                                    code.getNdbError());
@@ -759,18 +763,19 @@ void incr_key_row(std::string *response,
     opts.extraGetFinalValues = getvals;
 
     if (1)
-      opts.optionsPresent |= NdbOperation::OperationOptions::OO_DIRTY_FLAG;
+        opts.optionsPresent |= NdbOperation::OperationOptions::OO_DIRTY_FLAG;
 
     /* Define the actual operation to be sent to RonDB data node. */
     const NdbOperation *op = trans->writeTuple(
-      pk_key_record,
-      (const char*)key_row,
-      entire_key_record,
-      (char*)key_row,
-      mask_ptr,
-      &opts,
-      sizeof(opts));
-    if (op == nullptr) {
+        pk_key_record,
+        (const char *)key_row,
+        entire_key_record,
+        (char *)key_row,
+        mask_ptr,
+        &opts,
+        sizeof(opts));
+    if (op == nullptr)
+    {
         assign_ndb_err_to_response(response,
                                    "Failed to create NdbOperation",
                                    trans->getNdbError());
@@ -782,10 +787,11 @@ void incr_key_row(std::string *response,
                        NdbOperation::AbortOnError) != 0 ||
         trans->getNdbError().code != 0)
     {
-        if (trans->getNdbError().code == RONDB_KEY_NOT_NULL_ERROR) {
-             assign_ndb_err_to_response(response,
-                                        FAILED_INCR_KEY_MULTI_ROW,
-                                        trans->getNdbError());
+        if (trans->getNdbError().code == RONDB_KEY_NOT_NULL_ERROR)
+        {
+            assign_ndb_err_to_response(response,
+                                       FAILED_INCR_KEY_MULTI_ROW,
+                                       trans->getNdbError());
             return;
         }
         assign_ndb_err_to_response(response,
