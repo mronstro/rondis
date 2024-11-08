@@ -1,13 +1,8 @@
-#include <string.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include "pink/include/redis_conn.h"
 #include <ndbapi/NdbApi.hpp>
 #include <ndbapi/Ndb.hpp>
 
 #include "../common.h"
 #include "interpreted_code.h"
-#include "db_operations.h"
 #include "table_definitions.h"
 
 // Define the interpreted program for the INCR operation
