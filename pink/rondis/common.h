@@ -23,7 +23,8 @@ void assign_generic_err_to_response(std::string *response, const char *app_str);
 #define FAILED_CREATE_TXN_OBJECT "Failed to create transaction object"
 #define FAILED_EXEC_TXN "Failed to execute transaction"
 #define FAILED_READ_KEY "Failed to read key"
-#define FAILED_INCR_KEY "Failed to increment key"
+#define FAILED_INCR_KEY "Failed to increment key, multi-row value"
+#define FAILED_INCR_KEY_MULTI_ROW "Failed to increment key, multi-row value"
 #define FAILED_GET_OP "Failed to get NdbOperation object"
 #define FAILED_DEFINE_OP "Failed to define RonDB operation"
 
