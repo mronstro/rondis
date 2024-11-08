@@ -45,7 +45,7 @@ endif
 LDFLAGS := $(DEP_LIBS) $(LDFLAGS)
 
 # Use find to locate all .cc files in subdirectories
-SOURCES = $(CURDIR)/rondis.cc $(CURDIR)/rondb.cc $(CURDIR)/common.cc $(CURDIR)/string/table_definitions.cc $(CURDIR)/string/commands.cc $(CURDIR)/string/db_operations.cc
+SOURCES = $(CURDIR)/rondis.cc $(CURDIR)/rondb.cc $(CURDIR)/common.cc $(CURDIR)/string/table_definitions.cc $(CURDIR)/string/commands.cc $(CURDIR)/string/db_operations.cc $(CURDIR)/string/interpreted_code.cc
 OBJECTS = $(SOURCES:.cc=.o)
 
 # Target to build the executable "rondis"
