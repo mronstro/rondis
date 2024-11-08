@@ -77,6 +77,7 @@ int initNdbCodeIncr(std::string *response,
         assign_ndb_err_to_response(response,
                                    "Failed to create Interpreted code",
                                    code->getNdbError());
-        return;
+        return -1;
     }
+    return 0;
 }

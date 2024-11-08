@@ -6,6 +6,7 @@
 #include "common.h"
 #include "string/table_definitions.h"
 #include "string/commands.h"
+#include <strings.h>
 
 /*
     Ndb objects are not thread-safe. Hence, each worker thread / RonDB connection should
@@ -109,7 +110,8 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                         int worker_id)
 {
     // First check non-ndb commands
-    if (argv[0] == "ping")
+    const char *command = argv[0].c_str();
+    if (strcasecmp(command, "ping") == 0)
     {
         if (argv.size() != 1)
         {
@@ -156,7 +158,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
     else
     {
         Ndb *ndb = ndb_objects[worker_id];
-        if (argv[0] == "GET")
+        if (strcasecmp(command, "GET") == 0)
         {
             if (argv.size() == 2)
             {
@@ -169,7 +171,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                 assign_generic_err_to_response(response, error_message);
             }
         }
-        else if (argv[0] == "SET")
+        else if (strcasecmp(command, "SET") == 0)
         {
             if (argv.size() == 3)
             {
@@ -182,7 +184,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                 assign_generic_err_to_response(response, error_message);
             }
         }
-        else if (argv[0] == "INCR")
+        else if (strcasecmp(command, "INCR") == 0)
         {
             if (argv.size() == 2)
             {
