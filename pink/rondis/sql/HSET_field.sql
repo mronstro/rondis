@@ -1,9 +1,10 @@
-CREATE TABLE string_keys(
-    -- Redis actually supports a max key size of 512MiB,
+CREATE TABLE hset_fields(
+    redis_key_id BIGINT UNSIGNED NOT NULL,
+    -- Redis actually supports a max field size of 512MiB,
     -- but we choose not to support that here
-    redis_key VARBINARY(3000) NOT NULL,
-    -- This is to save space when referencing the key in the value table
-    rondb_key BIGINT UNSIGNED AUTO_INCREMENT NULL,
+    redis_field VARBINARY(3000) NOT NULL,
+    -- This is to save space when referencing the field in the value table
+    field_key BIGINT UNSIGNED AUTO_INCREMENT NULL,
     -- TODO: Replace with Enum below
     value_data_type INT UNSIGNED NOT NULL,
     -- value_data_type ENUM('string', 'number', 'binary_string'),
@@ -17,7 +18,7 @@ CREATE TABLE string_keys(
     expiry_date INT UNSIGNED,
     -- Easier to sort and delete keys this way
     KEY expiry_index(expiry_date),
-    PRIMARY KEY (redis_key) USING HASH,
-    UNIQUE KEY (rondb_key) USING HASH
+    PRIMARY KEY (redis_key_id, field_key),
+    UNIQUE KEY (field_key) USING HASH
 ) ENGINE NDB -- Each CHAR will use 1 byte
 CHARSET = latin1 COMMENT = "NDB_TABLE=PARTITION_BALANCE=FOR_RP_BY_LDM_X_8";

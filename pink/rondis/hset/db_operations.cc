@@ -10,23 +10,23 @@
 #include "table_definitions.h"
 #include "interpreted_code.h"
 
-NdbRecord *pk_key_record = nullptr;
-NdbRecord *entire_key_record = nullptr;
+NdbRecord *pk_field_record = nullptr;
+NdbRecord *entire_field_record = nullptr;
 NdbRecord *pk_value_record = nullptr;
 NdbRecord *entire_value_record = nullptr;
 
-int create_key_row(std::string *response,
-                   Ndb *ndb,
-                   const NdbDictionary::Table *tab,
-                   NdbTransaction *trans,
-                   Uint64 rondb_key,
-                   const char *key_str,
-                   Uint32 key_len,
-                   const char *value_str,
-                   Uint32 tot_value_len,
-                   Uint32 num_value_rows,
-                   Uint32 row_state,
-                   char *buf)
+int create_field_row(std::string *response,
+                     Ndb *ndb,
+                     const NdbDictionary::Table *tab,
+                     NdbTransaction *trans,
+                     Uint64 field_key,
+                     const char *field_str,
+                     Uint32 field_len,
+                     const char *value_str,
+                     Uint32 tot_value_len,
+                     Uint32 num_value_rows,
+                     Uint32 row_state,
+                     char *buf)
 {
     NdbOperation *write_op = trans->getNdbOperation(tab);
     if (write_op == nullptr)
@@ -37,23 +37,21 @@ int create_key_row(std::string *response,
         return -1;
     }
     write_op->writeTuple();
-    write_data_to_key_op(write_op,
-                         rondb_key,
-                         key_str,
-                         key_len,
-                         value_str,
-                         tot_value_len,
-                         num_value_rows,
-                         row_state,
-                         buf);
+    write_data_to_field_op(write_op,
+                           field_key,
+                           field_str,
+                           field_len,
+                           value_str,
+                           tot_value_len,
+                           num_value_rows,
+                           row_state,
+                           buf);
+    if (write_op->getNdbError().code != 0)
     {
-        if (write_op->getNdbError().code != 0)
-        {
-            assign_ndb_err_to_response(response,
-                                       FAILED_DEFINE_OP,
-                                       write_op->getNdbError());
-            return -1;
-        }
+        assign_ndb_err_to_response(response,
+                                   FAILED_DEFINE_OP,
+                                   write_op->getNdbError());
+        return -1;
     }
     {
         int ret_code = 0;
@@ -86,51 +84,51 @@ int create_key_row(std::string *response,
     }
 }
 
-int delete_and_insert_key_row(std::string *response,
-                              Ndb *ndb,
-                              const NdbDictionary::Table *tab,
-                              NdbTransaction *trans,
-                              Uint64 rondb_key,
-                              const char *key_str,
-                              Uint32 key_len,
-                              const char *value_str,
-                              Uint32 tot_value_len,
-                              Uint32 num_value_rows,
-                              Uint32 row_state,
-                              char *buf)
+int delete_and_insert_field_row(std::string *response,
+                                Ndb *ndb,
+                                const NdbDictionary::Table *tab,
+                                NdbTransaction *trans,
+                                Uint64 field_key,
+                                const char *field_str,
+                                Uint32 field_len,
+                                const char *value_str,
+                                Uint32 tot_value_len,
+                                Uint32 num_value_rows,
+                                Uint32 row_state,
+                                char *buf)
 {
-    if (delete_key_row(response,
-                       ndb,
-                       tab,
-                       trans,
-                       key_str,
-                       key_len,
-                       buf) != 0)
+    if (delete_field_row(response,
+                         ndb,
+                         tab,
+                         trans,
+                         field_str,
+                         field_len,
+                         buf) != 0)
     {
         return -1;
     }
 
-    return insert_key_row(response,
-                          ndb,
-                          tab,
-                          trans,
-                          rondb_key,
-                          key_str,
-                          key_len,
-                          value_str,
-                          tot_value_len,
-                          num_value_rows,
-                          row_state,
-                          buf);
+    return insert_field_row(response,
+                            ndb,
+                            tab,
+                            trans,
+                            field_key,
+                            field_str,
+                            field_len,
+                            value_str,
+                            tot_value_len,
+                            num_value_rows,
+                            row_state,
+                            buf);
 }
 
-int delete_key_row(std::string *response,
-                   Ndb *ndb,
-                   const NdbDictionary::Table *tab,
-                   NdbTransaction *trans,
-                   const char *key_str,
-                   Uint32 key_len,
-                   char *buf)
+int delete_field_row(std::string *response,
+                     Ndb *ndb,
+                     const NdbDictionary::Table *tab,
+                     NdbTransaction *trans,
+                     const char *field_str,
+                     Uint32 field_len,
+                     char *buf)
 {
     NdbOperation *del_op = trans->getNdbOperation(tab);
     if (del_op == nullptr)
@@ -141,9 +139,9 @@ int delete_key_row(std::string *response,
         return -1;
     }
     del_op->deleteTuple();
-    memcpy(&buf[2], key_str, key_len);
-    set_length(buf, key_len);
-    del_op->equal(KEY_TABLE_COL_redis_key, buf);
+    memcpy(&buf[2], field_str, field_len);
+    set_length(buf, field_len);
+    del_op->equal(FIELD_TABLE_COL_redis_key, buf);
 
     if (del_op->getNdbError().code != 0)
     {
@@ -165,18 +163,18 @@ int delete_key_row(std::string *response,
     return 0;
 }
 
-int insert_key_row(std::string *response,
-                   Ndb *ndb,
-                   const NdbDictionary::Table *tab,
-                   NdbTransaction *trans,
-                   Uint64 rondb_key,
-                   const char *key_str,
-                   Uint32 key_len,
-                   const char *value_str,
-                   Uint32 tot_value_len,
-                   Uint32 num_value_rows,
-                   Uint32 row_state,
-                   char *buf)
+int insert_field_row(std::string *response,
+                     Ndb *ndb,
+                     const NdbDictionary::Table *tab,
+                     NdbTransaction *trans,
+                     Uint64 field_key,
+                     const char *field_str,
+                     Uint32 field_len,
+                     const char *value_str,
+                     Uint32 tot_value_len,
+                     Uint32 num_value_rows,
+                     Uint32 row_state,
+                     char *buf)
 {
     {
         NdbOperation *insert_op = trans->getNdbOperation(tab);
@@ -188,15 +186,15 @@ int insert_key_row(std::string *response,
             return -1;
         }
         insert_op->insertTuple();
-        write_data_to_key_op(insert_op,
-                             rondb_key,
-                             key_str,
-                             key_len,
-                             value_str,
-                             tot_value_len,
-                             num_value_rows,
-                             row_state,
-                             buf);
+        write_data_to_field_op(insert_op,
+                               field_key,
+                               field_str,
+                               field_len,
+                               value_str,
+                               tot_value_len,
+                               num_value_rows,
+                               row_state,
+                               buf);
         if (insert_op->getNdbError().code != 0)
         {
             assign_ndb_err_to_response(response,
@@ -231,32 +229,32 @@ int insert_key_row(std::string *response,
     }
 }
 
-void write_data_to_key_op(NdbOperation *ndb_op,
-                          Uint64 rondb_key,
-                          const char *key_str,
-                          Uint32 key_len,
-                          const char *value_str,
-                          Uint32 tot_value_len,
-                          Uint32 num_value_rows,
-                          Uint32 row_state,
-                          char *buf)
+void write_data_to_field_op(NdbOperation *ndb_op,
+                            Uint64 field_key,
+                            const char *field_str,
+                            Uint32 field_len,
+                            const char *value_str,
+                            Uint32 tot_value_len,
+                            Uint32 num_value_rows,
+                            Uint32 row_state,
+                            char *buf)
 {
-    memcpy(&buf[2], key_str, key_len);
-    set_length(buf, key_len);
-    ndb_op->equal(KEY_TABLE_COL_redis_key, buf);
+    memcpy(&buf[2], field_str, field_len);
+    set_length(buf, field_len);
+    ndb_op->equal(FIELD_TABLE_COL_redis_key, buf);
 
-    if (rondb_key == 0)
+    if (field_key == 0)
     {
-        ndb_op->setValue(KEY_TABLE_COL_rondb_key, (char *)NULL);
+        ndb_op->setValue(FIELD_TABLE_COL_field_key, (char *)NULL);
     }
     else
     {
-        ndb_op->setValue(KEY_TABLE_COL_rondb_key, rondb_key);
+        ndb_op->setValue(FIELD_TABLE_COL_field_key, field_key);
     }
-    ndb_op->setValue(KEY_TABLE_COL_tot_value_len, tot_value_len);
-    ndb_op->setValue(KEY_TABLE_COL_num_rows, num_value_rows);
-    ndb_op->setValue(KEY_TABLE_COL_value_data_type, row_state);
-    ndb_op->setValue(KEY_TABLE_COL_expiry_date, 0);
+    ndb_op->setValue(FIELD_TABLE_COL_tot_value_len, tot_value_len);
+    ndb_op->setValue(FIELD_TABLE_COL_num_rows, num_value_rows);
+    ndb_op->setValue(FIELD_TABLE_COL_value_data_type, row_state);
+    ndb_op->setValue(FIELD_TABLE_COL_expiry_date, 0);
 
     Uint32 this_value_len = tot_value_len;
     if (this_value_len > INLINE_VALUE_LEN)
@@ -265,7 +263,7 @@ void write_data_to_key_op(NdbOperation *ndb_op,
     }
     memcpy(&buf[2], value_str, this_value_len);
     set_length(buf, this_value_len);
-    ndb_op->setValue(KEY_TABLE_COL_value_start, buf);
+    ndb_op->setValue(FIELD_TABLE_COL_value_start, buf);
 }
 
 int create_value_row(std::string *response,
@@ -273,7 +271,7 @@ int create_value_row(std::string *response,
                      const NdbDictionary::Dictionary *dict,
                      NdbTransaction *trans,
                      const char *start_value_ptr,
-                     Uint64 rondb_key,
+                     Uint64 field_key,
                      Uint32 this_value_len,
                      Uint32 ordinal,
                      char *buf)
@@ -295,7 +293,7 @@ int create_value_row(std::string *response,
         return -1;
     }
     op->insertTuple();
-    op->equal(VALUE_TABLE_COL_rondb_key, rondb_key);
+    op->equal(VALUE_TABLE_COL_field_key, field_key);
     op->equal(VALUE_TABLE_COL_ordinal, ordinal);
     memcpy(&buf[2], start_value_ptr, this_value_len);
     set_length(buf, this_value_len);
@@ -314,7 +312,7 @@ int create_all_value_rows(std::string *response,
                           Ndb *ndb,
                           const NdbDictionary::Dictionary *dict,
                           NdbTransaction *trans,
-                          Uint64 rondb_key,
+                          Uint64 field_key,
                           const char *value_str,
                           Uint32 value_len,
                           Uint32 num_value_rows,
@@ -334,7 +332,7 @@ int create_all_value_rows(std::string *response,
                              dict,
                              trans,
                              start_value_ptr,
-                             rondb_key,
+                             field_key,
                              this_value_len,
                              ordinal,
                              buf) != 0)
@@ -357,12 +355,12 @@ int create_all_value_rows(std::string *response,
     return 0;
 }
 
-int get_simple_key_row(std::string *response,
-                       const NdbDictionary::Table *tab,
-                       Ndb *ndb,
-                       NdbTransaction *trans,
-                       struct key_table *key_row,
-                       Uint32 key_len)
+int get_simple_field_row(std::string *response,
+                         const NdbDictionary::Table *tab,
+                         Ndb *ndb,
+                         NdbTransaction *trans,
+                         struct field_table *field_row,
+                         Uint32 field_len)
 {
     /**
      * Mask and options means simply reading all columns
@@ -372,10 +370,10 @@ int get_simple_key_row(std::string *response,
     const Uint32 mask = 0xFE;
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
     const NdbOperation *read_op = trans->readTuple(
-        pk_key_record,
-        (const char *)key_row,
-        entire_key_record,
-        (char *)key_row,
+        pk_field_record,
+        (const char *)field_row,
+        entire_field_record,
+        (char *)field_row,
         NdbOperation::LM_CommittedRead,
         mask_ptr);
     if (read_op == nullptr)
@@ -400,7 +398,7 @@ int get_simple_key_row(std::string *response,
         return RONDB_INTERNAL_ERROR;
     }
 
-    if (key_row->num_rows > 0)
+    if (field_row->num_rows > 0)
     {
         return 0;
     }
@@ -408,12 +406,12 @@ int get_simple_key_row(std::string *response,
     int header_len = snprintf(header_buf,
                               sizeof(header_buf),
                               "$%u\r\n",
-                              key_row->tot_value_len);
+                              field_row->tot_value_len);
 
     // The total length of the expected response
-    response->reserve(header_len + key_row->tot_value_len + 2);
+    response->reserve(header_len + field_row->tot_value_len + 2);
     response->append(header_buf);
-    response->append((const char *)&key_row->value_start[2], key_row->tot_value_len);
+    response->append((const char *)&field_row->value_start[2], field_row->tot_value_len);
     response->append("\r\n");
     /*
         printf("Respond with tot_value_len: %u, string: %s\n",
@@ -428,7 +426,7 @@ int get_value_rows(std::string *response,
                    const NdbDictionary::Dictionary *dict,
                    NdbTransaction *trans,
                    const Uint32 num_rows,
-                   const Uint64 rondb_key,
+                   const Uint64 field_key,
                    const Uint32 tot_value_len)
 {
     const NdbDictionary::Table *tab = dict->getTable(VALUE_TABLE_NAME);
@@ -452,7 +450,7 @@ int get_value_rows(std::string *response,
 
         if (read_batched_value_rows(response,
                                     trans,
-                                    rondb_key,
+                                    field_key,
                                     num_rows_to_read,
                                     start_ordinal,
                                     commit_type) != 0)
@@ -466,7 +464,7 @@ int get_value_rows(std::string *response,
 // Break up fetching large values to avoid blocking the network for other reads
 int read_batched_value_rows(std::string *response,
                             NdbTransaction *trans,
-                            const Uint64 rondb_key,
+                            const Uint64 field_key,
                             const Uint32 num_rows_to_read,
                             const Uint32 start_ordinal,
                             const NdbTransaction::ExecType commit_type)
@@ -476,7 +474,7 @@ int read_batched_value_rows(std::string *response,
     Uint32 ordinal = start_ordinal;
     for (Uint32 i = 0; i < num_rows_to_read; i++)
     {
-        value_rows[i].rondb_key = rondb_key;
+        value_rows[i].rondb_key = field_key;
         value_rows[i].ordinal = ordinal;
         const NdbOperation *read_op = trans->readTuple(
             pk_value_record,
@@ -513,13 +511,13 @@ int read_batched_value_rows(std::string *response,
     return 0;
 }
 
-int get_complex_key_row(std::string *response,
-                        const NdbDictionary::Dictionary *dict,
-                        const NdbDictionary::Table *tab,
-                        Ndb *ndb,
-                        NdbTransaction *trans,
-                        struct key_table *key_row,
-                        Uint32 key_len)
+int get_complex_field_row(std::string *response,
+                          const NdbDictionary::Dictionary *dict,
+                          const NdbDictionary::Table *tab,
+                          Ndb *ndb,
+                          NdbTransaction *trans,
+                          struct field_table *field_row,
+                          Uint32 field_len)
 {
     /**
      * Since a simple read using CommittedRead we will go back to
@@ -534,10 +532,10 @@ int get_complex_key_row(std::string *response,
     const Uint32 mask = 0xFE;
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
     const NdbOperation *read_op = trans->readTuple(
-        pk_key_record,
-        (const char *)key_row,
-        entire_key_record,
-        (char *)key_row,
+        pk_field_record,
+        (const char *)field_row,
+        entire_field_record,
+        (char *)field_row,
         NdbOperation::LM_Read, // Shared lock so that reads from value table later are consistent
         mask_ptr);
     if (read_op == nullptr)
@@ -564,21 +562,21 @@ int get_complex_key_row(std::string *response,
     int header_len = snprintf(header_buf,
                               sizeof(header_buf),
                               "$%u\r\n",
-                              key_row->tot_value_len);
-    response->reserve(header_len + key_row->tot_value_len + 2);
+                              field_row->tot_value_len);
+    response->reserve(header_len + field_row->tot_value_len + 2);
     response->append(header_buf);
 
     // Append inline value to response
-    Uint32 inline_value_len = get_length((char *)&key_row->value_start[0]);
-    response->append((const char *)&key_row->value_start[2], inline_value_len);
+    Uint32 inline_value_len = get_length((char *)&field_row->value_start[0]);
+    response->append((const char *)&field_row->value_start[2], inline_value_len);
 
     int ret_code = get_value_rows(response,
                                   ndb,
                                   dict,
                                   trans,
-                                  key_row->num_rows,
-                                  key_row->rondb_key,
-                                  key_row->tot_value_len);
+                                  field_row->num_rows,
+                                  field_row->field_key,
+                                  field_row->tot_value_len);
     if (ret_code == 0)
     {
         response->append("\r\n");
@@ -588,11 +586,11 @@ int get_complex_key_row(std::string *response,
 }
 
 int rondb_get_rondb_key(const NdbDictionary::Table *tab,
-                        Uint64 &rondb_key,
+                        Uint64 &field_key,
                         Ndb *ndb,
                         std::string *response)
 {
-    if (ndb->getAutoIncrementValue(tab, rondb_key, unsigned(1024)) != 0)
+    if (ndb->getAutoIncrementValue(tab, field_key, unsigned(1024)) != 0)
     {
         assign_ndb_err_to_response(response,
                                    "Failed to get autoincrement value",
@@ -602,11 +600,11 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
     return 0;
 }
 
-void incr_key_row(std::string *response,
-                  Ndb *ndb,
-                  const NdbDictionary::Table *tab,
-                  NdbTransaction *trans,
-                  struct key_table *key_row)
+void incr_field_row(std::string *response,
+                    Ndb *ndb,
+                    const NdbDictionary::Table *tab,
+                    NdbTransaction *trans,
+                    struct field_table *field_row)
 {
     /**
      * The mask specifies which columns is to be updated after the interpreter
@@ -622,10 +620,10 @@ void incr_key_row(std::string *response,
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
 
     // redis_key already set as this is the Primary key
-    key_row->null_bits = 1; // Set rondb_key to NULL, first NULL column
-    key_row->num_rows = 0;
-    key_row->value_data_type = 0;
-    key_row->expiry_date = 0;
+    field_row->null_bits = 1; // Set rondb_key to NULL, first NULL column
+    field_row->num_rows = 0;
+    field_row->value_data_type = 0;
+    field_row->expiry_date = 0;
 
     Uint32 code_buffer[128];
     NdbInterpretedCode code(tab, &code_buffer[0], sizeof(code_buffer));
@@ -657,10 +655,10 @@ void incr_key_row(std::string *response,
 
     /* Define the actual operation to be sent to RonDB data node. */
     const NdbOperation *op = trans->writeTuple(
-        pk_key_record,
-        (const char *)key_row,
-        entire_key_record,
-        (char *)key_row,
+        pk_field_record,
+        (const char *)field_row,
+        entire_field_record,
+        (char *)field_row,
         mask_ptr,
         &opts,
         sizeof(opts));

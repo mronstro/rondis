@@ -13,9 +13,11 @@
 #define RONDB_INTERNAL_ERROR 2
 #define READ_ERROR 626
 
-int write_formatted(char *buffer, int bufferSize, const char *format, ...);
 void assign_ndb_err_to_response(std::string *response, const char *app_str, NdbError error);
 void assign_generic_err_to_response(std::string *response, const char *app_str);
+
+void set_length(char* buf, Uint32 key_len);
+Uint32 get_length(char* buf);
 
 // NDB API error messages
 #define FAILED_GET_DICT "Failed to get NdbDict"
