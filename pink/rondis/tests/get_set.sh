@@ -97,6 +97,10 @@ for i in {1..10}; do
     set_and_get "$KEY:multiple_$i" "$test_value"
 done
 
+for i in {1..10000}; do
+    echo "SET piped_key_$i value_$i"
+done | redis-cli --pipe --verbose
+
 # echo "Testing edge case large key length (Redis allows up to 512MB for the value)..."
 # edge_value=$(head -c 100000 < /dev/zero | tr '\0' 'b')
 # set_and_get "$KEY:edge_large" "$edge_value"
