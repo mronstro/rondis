@@ -98,7 +98,7 @@ for i in {1..10}; do
 done
 
 for i in {1..10000}; do
-    echo "SET piped_key_$i value_$i"
+    echo "SET $KEY:piped_$i value_$i"
 done | redis-cli --pipe --verbose
 
 # echo "Testing edge case large key length (Redis allows up to 512MB for the value)..."
