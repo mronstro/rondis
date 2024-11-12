@@ -95,6 +95,15 @@ void print_args(const pink::RedisCmdArgsType &argv)
     printf("\n");
 }
 
+void unsupported_command(const pink::RedisCmdArgsType &argv, std::string *response)
+{
+    printf("Unsupported command: ");
+    print_args(argv);
+    char error_message[256];
+    snprintf(error_message, sizeof(error_message), REDIS_UNKNOWN_COMMAND, argv[0].c_str());
+    assign_generic_err_to_response(response, error_message);
+}
+
 int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                         std::string *response,
                         int worker_id)
@@ -110,7 +119,8 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
             return 0;
         }
         response->append("+PONG\r\n");
-    } else if (argv[0] == "ECHO")
+    }
+    else if (argv[0] == "ECHO")
     {
         if (argv.size() != 2)
         {
@@ -119,8 +129,29 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
             assign_generic_err_to_response(response, error_message);
             return 0;
         }
-        
+
         response->assign("$" + std::to_string(argv[1].length()) + "\r\n" + argv[1] + "\r\n");
+    }
+    else if (argv[0] == "CONFIG")
+    {
+        if (argv.size() != 3)
+        {
+            char error_message[256];
+            snprintf(error_message, sizeof(error_message), REDIS_WRONG_NUMBER_OF_ARGS, argv[0].c_str());
+            assign_generic_err_to_response(response, error_message);
+            return 0;
+        }
+        if (argv[1] == "GET")
+        {
+            *response += "*2\r\n";
+            *response += "$" + std::to_string(argv[2].length()) + "\r\n";
+            *response += argv[2] + "\r\n";
+            *response += "*0\r\n";
+        }
+        else
+        {
+            unsupported_command(argv, response);
+        }
     }
     else
     {
@@ -153,11 +184,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
         }
         else
         {
-            printf("Unsupported command: ");
-            print_args(argv);
-            char error_message[256];
-            snprintf(error_message, sizeof(error_message), REDIS_UNKNOWN_COMMAND, argv[0].c_str());
-            assign_generic_err_to_response(response, error_message);
+            unsupported_command(argv, response);
         }
         if (ndb->getClientStat(ndb->TransStartCount) != ndb->getClientStat(ndb->TransCloseCount))
         {
