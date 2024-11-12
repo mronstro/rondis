@@ -97,6 +97,7 @@ for i in {1..10}; do
     set_and_get "$KEY:multiple_$i" "$test_value"
 done
 
+echo "Testing piped keys..."
 for i in {1..10000}; do
     echo "SET $KEY:piped_$i value_$i"
 done | redis-cli --pipe --verbose
