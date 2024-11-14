@@ -35,13 +35,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Download RonDB
+        run: |
+          wget $RONDB_TARBALL_URI -O /tmp/temp_tarball.tar.gz
+          mkdir -p $RONDB_PATH
+          tar xfz /tmp/temp_tarball.tar.gz -C $RONDB_PATH --strip-components=1
+
       - name: Run rondb-docker
         env:
           RONDB_DOCKER_DIR: /tmp/rondb-docker
         run: |
-            path_now=$(pwd)
             git clone -b release-0.7 https://github.com/logicalclocks/rondb-docker.git $RONDB_DOCKER_DIR
             cd $RONDB_DOCKER_DIR && ./build_run_docker.sh -d \
+              --rondb-tarball-path $RONDB_PATH \
               --size small \
               --num-mgm-nodes 1 \
               --node-groups 1 \
@@ -49,17 +55,10 @@ jobs:
               --num-mysql-nodes 1 \
               --num-rest-api-nodes 0 \
               --num-benchmarking-nodes 0
-            cd $path_now
 
       - name: Build Rondis image
         run: docker build -t $IMAGE_NAME .
 
-      - name: Download RonDB
-        run: |
-          wget $RONDB_TARBALL_URI -O /tmp/temp_tarball.tar.gz
-          mkdir -p $RONDB_PATH
-          tar xfz /tmp/temp_tarball.tar.gz -C $RONDB_PATH --strip-components=1
-        
       - name: Create Rondis environment
         run: |
           docker run -d \
