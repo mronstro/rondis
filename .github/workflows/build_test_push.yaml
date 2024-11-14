@@ -37,8 +37,6 @@ jobs:
           fetch-depth: 0
 
       - name: Clone rondb-docker
-        env:
-          RONDB_DOCKER_DIR: /tmp/rondb-docker
         run: git clone -b release-0.7 https://github.com/logicalclocks/rondb-docker.git $RONDB_DOCKER_DIR
 
       - name: Download RonDB
