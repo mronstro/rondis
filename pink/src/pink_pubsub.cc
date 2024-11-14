@@ -141,7 +141,7 @@ int PubSubThread::Publish(const std::string& channel, const std::string &msg) {
   channel_ = channel;
   message_ = msg;
   // Send signal to ThreadMain()
-  write(msg_pfd_[1], "", 1);
+  (void)write(msg_pfd_[1], "", 1);
   receiver_mutex_.Lock();
   while (receivers_ == -1) {
     receiver_rsignal_.Wait();
@@ -384,7 +384,7 @@ void *PubSubThread::ThreadMain() {
       pfe = (pink_epoll_->firedevent()) + i;
       if (pfe->fd == pink_epoll_->notify_receive_fd()) {        // New connection comming
         if (pfe->mask & PinkEpoll::kRead) {
-          read(pink_epoll_->notify_receive_fd(), triger, 1);
+          (void)read(pink_epoll_->notify_receive_fd(), triger, 1);
           {
             PinkItem ti = pink_epoll_->notify_queue_pop();
             if (ti.notify_type() == kNotiClose) {
@@ -404,7 +404,7 @@ void *PubSubThread::ThreadMain() {
       }
       if (pfe->fd == msg_pfd_[0]) {           // Publish message
         if (pfe->mask & PinkEpoll::kRead) {
-          read(msg_pfd_[0], triger, 1);
+          (void)read(msg_pfd_[0], triger, 1);
           std::string channel, msg;
           int32_t receivers = 0;
           channel = channel_;
