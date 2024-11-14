@@ -77,6 +77,10 @@ jobs:
             $IMAGE_NAME \
             tail -f /dev/null
 
+      # Takes a while for RonDB service to start properly
+      - name: Wait for RonDB service to start properly
+        run: sleep30 
+
       - name: Build Pink
         run: docker exec -i $CONTAINER_NAME bash -c "cd pink && ./build.sh"
 
@@ -100,7 +104,7 @@ jobs:
 
       # Takes a few seconds before all connections are setup and started properly
       - name: Wait for Rondis server to start properly
-        run: sleep 5
+        run: sleep 31
 
       # Running this multiple times to check for memory leaks and that overwrites/updates/deletes work
       - name: Run tests multiple times
