@@ -98,6 +98,10 @@ jobs:
           docker exec -w $DOCKER_WORK_DIR -e LD_LIBRARY_PATH=/tmp/rondb/lib \
             -t $CONTAINER_NAME pink/rondis/rondis 6379 mgmd_1:1186 2 > $LOCAL_RONDIS_LOG &
 
+      # Takes a few seconds before all connections are setup and started properly
+      - name: Wait for Rondis server to start properly
+        run: sleep 5
+
       # Running this multiple times to check for memory leaks and that overwrites/updates/deletes work
       - name: Run tests multiple times
         run: |
