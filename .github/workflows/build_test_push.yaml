@@ -23,6 +23,7 @@ jobs:
     needs: [build-pink-macos]
     runs-on: ubuntu-latest
     env:
+      RONDB_VERSION: 22.10.5
       RONDB_TARBALL_URI: https://repo.hops.works/master/rondb-22.10.5-linux-glibc2.28-x86_64.tar.gz
       RONDB_DOCKER_DIR: /tmp/rondb-docker
       RONDB_PATH: /tmp/rondb-docker/rondb
@@ -50,6 +51,7 @@ jobs:
             # The script expects a relative path to the tarball
             cd $RONDB_DOCKER_DIR && ./build_run_docker.sh -d \
               --rondb-tarball-path ./rondb \
+              --rondb-version $RONDB_VERSION \
               --size small \
               --num-mgm-nodes 1 \
               --node-groups 1 \
