@@ -4,6 +4,7 @@
 #include "pink/include/redis_conn.h"
 #include <ndbapi/NdbApi.hpp>
 #include <ndbapi/Ndb.hpp>
+#include "table_definitions.h"
 
 #ifndef STRING_DB_OPERATIONS_H
 #define STRING_DB_OPERATIONS_H
@@ -49,7 +50,7 @@ int delete_key_row(std::string *response,
 
 int create_value_row(std::string *response,
                      Ndb *ndb,
-                     const NdbDictionary::Dictionary *dict,
+                     const NdbDictionary::Table *value_tab,
                      NdbTransaction *trans,
                      const char *start_value_ptr,
                      Uint64 key_id,
@@ -59,7 +60,7 @@ int create_value_row(std::string *response,
 
 int create_all_value_rows(std::string *response,
                           Ndb *ndb,
-                          const NdbDictionary::Dictionary *dict,
+                          const NdbDictionary::Table *value_tab,
                           NdbTransaction *trans,
                           Uint64 rondb_key,
                           const char *value_str,
@@ -68,7 +69,7 @@ int create_all_value_rows(std::string *response,
                           char *buf);
 
 int delete_value_rows(std::string *response,
-                      const NdbDictionary::Table *tab,
+                      const NdbDictionary::Table *value_tab,
                       NdbTransaction *trans,
                       Uint64 rondb_key,
                       Uint32 start_ordinal,
@@ -77,6 +78,15 @@ int delete_value_rows(std::string *response,
     Since the beginning of the value is saved within the key table, it
     can suffice to read the key table to get the value. If the value is
 */
+int prepare_get_simple_key_row(std::string *response,
+                               const NdbDictionary::Table *tab,
+                               NdbTransaction *trans,
+                               struct key_table *key_row);
+
+void prepare_simple_read_transaction(std::string *response,
+                                    NdbTransaction *trans,
+                                    struct KeyStorage *key_storage);
+
 int get_simple_key_row(std::string *response,
                        const NdbDictionary::Table *tab,
                        Ndb *ndb,

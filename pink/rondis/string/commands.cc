@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <algorithm>
 #include "pink/include/redis_conn.h"
 #include <ndbapi/NdbApi.hpp>
 #include <ndbapi/Ndb.hpp>
@@ -10,22 +11,12 @@
 #include "../common.h"
 #include "table_definitions.h"
 
-bool setup_transaction(
+static
+bool setup_metadata(
     Ndb *ndb,
     std::string *response,
-    Uint64 redis_key_id,
-    struct key_table *key_row,
-    const char *key_str,
-    Uint32 key_len,
     const NdbDictionary::Dictionary **ret_dict,
-    const NdbDictionary::Table **ret_tab,
-    NdbTransaction **ret_trans)
-{
-    if (key_len > MAX_KEY_VALUE_LEN)
-    {
-        assign_generic_err_to_response(response, REDIS_KEY_TOO_LARGE);
-        return false;
-    }
+    const NdbDictionary::Table **ret_tab) {
     const NdbDictionary::Dictionary *dict = ndb->getDictionary();
     if (dict == nullptr)
     {
@@ -36,6 +27,25 @@ bool setup_transaction(
     if (tab == nullptr)
     {
         assign_ndb_err_to_response(response, FAILED_CREATE_TABLE_OBJECT, dict->getNdbError());
+        return false;
+    }
+    *ret_tab = tab;
+    *ret_dict = dict;
+    return true;
+}
+
+static
+bool setup_one_transaction(Ndb *ndb,
+                           std::string *response,
+                           Uint64 redis_key_id,
+                           struct key_table *key_row,
+                           const char *key_str,
+                           Uint32 key_len,
+                           const NdbDictionary::Table *tab,
+                           NdbTransaction **ret_trans) {
+    if (key_len > MAX_KEY_VALUE_LEN)
+    {
+        assign_generic_err_to_response(response, REDIS_KEY_TOO_LARGE);
         return false;
     }
     key_row->redis_key_id = redis_key_id;
@@ -51,10 +61,35 @@ bool setup_transaction(
                                    ndb->getNdbError());
         return false;
     }
-    *ret_tab = tab;
     *ret_trans = trans;
-    *ret_dict = dict;
     return true;
+}
+
+bool setup_transaction(
+    Ndb *ndb,
+    std::string *response,
+    Uint64 redis_key_id,
+    struct key_table *key_row,
+    const char *key_str,
+    Uint32 key_len,
+    const NdbDictionary::Dictionary **ret_dict,
+    const NdbDictionary::Table **ret_tab,
+    NdbTransaction **ret_trans)
+{
+    if (!setup_metadata(ndb,
+                        response,
+                        ret_dict,
+                        ret_tab)) {
+        return false;
+    }
+    return setup_one_transaction(ndb,
+                                 response,
+                                 redis_key_id,
+                                 key_row,
+                                 key_str,
+                                 key_len,
+                                 *ret_tab,
+                                 ret_trans);
 }
 
 /*
@@ -131,6 +166,80 @@ void rondb_get(Ndb *ndb,
         ndb->closeTransaction(trans);
         return;
     }
+}
+
+static
+void rondb_mget(Ndb *ndb,
+               const pink::RedisCmdArgsType &argv,
+               std::string *response,
+               Uint64 redis_key_id)
+{
+    Uint32 arg_index_start = (redis_key_id == STRING_REDIS_KEY_ID) ? 1 : 2;
+    Uint32 num_keys = argv.size() - arg_index_start;
+    assert(num_keys > 0);
+    const NdbDictionary::Dictionary *dict;
+    const NdbDictionary::Table *tab = nullptr;
+    NdbTransaction *trans = nullptr;
+    struct KeyStorage *key_storage;
+    key_storage = (struct KeyStorage*)malloc(
+      sizeof(struct KeyStorage) * num_keys);
+    struct key_table key_row;
+    const char *key_str = argv[arg_index_start].c_str();
+    Uint32 key_len = argv[arg_index_start].size();
+    if (!setup_metadata(ndb,
+                        response,
+                        &dict,
+                        &tab)) {
+        return;
+    }
+    for (Uint32 i = 0; i < num_keys; i++) {
+        Uint32 arg_index = i + arg_index_start;
+        key_storage[i].is_found = false;
+        key_storage[i].read_value_size = 0;
+        key_storage[i].key_str = argv[arg_index].c_str();
+        key_storage[i].key_len = argv[arg_index].size();
+        if (!setup_one_transaction(ndb,
+                                   response,
+                                   redis_key_id,
+                                   &key_storage[i].key_row,
+                                   key_storage[i].key_str,
+                                   key_storage[i].key_len,
+                                   tab,
+                                   &key_storage[i].trans)) {
+            return;
+        }
+    }
+    for (Uint32 i = 0; i < num_keys; i++) {
+        if (prepare_get_simple_key_row(response,
+                                       tab,
+                                       key_storage[i].trans,
+                                       &key_storage[i].key_row) != 0) {
+            return;
+        }
+    }
+    Uint32 current_index = 0;
+    do {
+        Uint32 loop_count = std::min(num_keys - current_index,
+                                     (Uint32)MAX_PARALLEL_READ_KEY_OPS);
+        for (Uint32 i = 0; i < loop_count; i++) {
+            prepare_simple_read_transaction(response,
+                                            key_storage[current_index].trans,
+                                            &key_storage[current_index + i]);
+        }
+        Uint32 current_finished_in_loop = 0;
+        Uint32 min_finished = (loop_count + 1) / 2;
+        do {
+          int finished = ndb->sendPollNdb(3000, (int)min_finished);
+          assert(finished >= 0);
+          current_finished_in_loop += finished;
+        } while (current_finished_in_loop < loop_count);
+        current_index += loop_count;
+    } while (current_index < num_keys);
+    /**
+     * We are done with the reading process, now it is time to report the
+     * result based on the KeyStorage array.
+     */
+    return;
 }
 
 static
@@ -252,6 +361,15 @@ void rondb_set(
         response->append("+OK\r\n");
         return;
     }
+    const NdbDictionary::Table *value_tab = dict->getTable(VALUE_TABLE_NAME);
+    if (value_tab == nullptr)
+    {
+        ndb->closeTransaction(trans);
+        assign_ndb_err_to_response(response,
+                                   FAILED_CREATE_TABLE_OBJECT,
+                                   ndb->getNdbError());
+        return;
+    }
     /**
      * Coming here means that we either have to add new value rows or we have
      * to delete previous value rows or both. Thus the transaction is still
@@ -261,7 +379,7 @@ void rondb_set(
     if (num_value_rows > 0) {
         ret_code = create_all_value_rows(response,
                                          ndb,
-                                         dict,
+                                         value_tab,
                                          trans,
                                          rondb_key,
                                          value_str,
@@ -274,7 +392,7 @@ void rondb_set(
         return;
     }
     ret_code = delete_value_rows(response,
-                                 tab,
+                                 value_tab,
                                  trans,
                                  rondb_key,
                                  num_value_rows,
@@ -295,6 +413,33 @@ void rondb_set(
     }
     ndb->closeTransaction(trans);
     response->append("+OK\r\n");
+    return;
+}
+
+static
+void rondb_mset(Ndb *ndb,
+               const pink::RedisCmdArgsType &argv,
+               std::string *response,
+               Uint64 redis_key_id)
+{
+    Uint32 arg_index_start = (redis_key_id == STRING_REDIS_KEY_ID) ? 1 : 2;
+    const NdbDictionary::Dictionary *dict;
+    const NdbDictionary::Table *tab = nullptr;
+    NdbTransaction *trans = nullptr;
+    struct key_table key_row;
+    const char *key_str = argv[arg_index_start].c_str();
+    Uint32 key_len = argv[arg_index_start].size();
+    if (!setup_transaction(ndb,
+                           response,
+                           redis_key_id,
+                           &key_row,
+                           key_str,
+                           key_len,
+                           &dict,
+                           &tab,
+                           &trans)) {
+        return;
+    }
     return;
 }
 
@@ -339,11 +484,25 @@ void rondb_get_command(Ndb *ndb,
   return rondb_get(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
+void rondb_mget_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response)
+{
+  return rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
+}
+
 void rondb_set_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
   return rondb_set(ndb, argv, response, STRING_REDIS_KEY_ID);
+}
+
+void rondb_mset_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response)
+{
+  return rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_incr_command(Ndb *ndb,
@@ -363,7 +522,26 @@ void rondb_hget_command(Ndb *ndb,
                                        argv[1].c_str(),
                                        argv[1].size(),
                                        response);
+  if (ret_code != 0) {
+      return;
+  }
   return rondb_get(ndb, argv, response, redis_key_id);
+}
+
+void rondb_hmget_command(Ndb *ndb,
+                         const pink::RedisCmdArgsType &argv,
+                         std::string *response)
+{
+  Uint64 redis_key_id;
+  int ret_code = rondb_get_redis_key_id(ndb,
+                                       redis_key_id,
+                                       argv[1].c_str(),
+                                       argv[1].size(),
+                                       response);
+  if (ret_code != 0) {
+      return;
+  }
+  return rondb_mget(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hset_command(Ndb *ndb,
@@ -372,11 +550,14 @@ void rondb_hset_command(Ndb *ndb,
 {
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
-                                       redis_key_id,
-                                       argv[1].c_str(),
-                                       argv[1].size(),
-                                       response);
-  return rondb_set(ndb, argv, response, redis_key_id);
+                                        redis_key_id,
+                                        argv[1].c_str(),
+                                        argv[1].size(),
+                                        response);
+  if (ret_code != 0) {
+      return;
+  }
+  return rondb_mset(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hincr_command(Ndb *ndb,
@@ -389,5 +570,8 @@ void rondb_hincr_command(Ndb *ndb,
                                        argv[1].c_str(),
                                        argv[1].size(),
                                        response);
+  if (ret_code != 0) {
+      return;
+  }
   return rondb_incr(ndb, argv, response, redis_key_id);
 }

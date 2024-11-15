@@ -26,9 +26,17 @@ void rondb_get_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response);
 
+void rondb_mget_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response);
+
 void rondb_set_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response);
+
+void rondb_mset_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response);
 
 void rondb_incr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
@@ -37,6 +45,10 @@ void rondb_incr_command(Ndb *ndb,
 void rondb_hget_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response);
+
+void rondb_hmget_command(Ndb *ndb,
+                         const pink::RedisCmdArgsType &argv,
+                         std::string *response);
 
 void rondb_hset_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,

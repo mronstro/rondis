@@ -3,12 +3,15 @@
 
 #ifndef STRING_TABLE_DEFINITIONS_H
 #define STRING_TABLE_DEFINITIONS_H
+
 /*
     NdbRecords are used for serialization. They map columns of a table to fields in a struct.
     For each table we interact with, we define:
     - one NdbRecord defining the columns to filter the row we want to read
     - one NdbRecord defining the columns we want to fetch
 */
+
+#define MAX_PARALLEL_READ_KEY_OPS 100
 
 #define MAX_VALUES_TO_WRITE 4
 #define MAX_KEY_VALUE_LEN 3000
@@ -38,7 +41,7 @@ struct hset_key_table
 */
 
 #define KEY_TABLE_NAME "string_keys"
-#define INLINE_VALUE_LEN 26500
+#define INLINE_VALUE_LEN 4096
 
 int init_key_records(NdbDictionary::Dictionary *dict);
 
@@ -62,14 +65,14 @@ struct key_table
 {
     Uint32 null_bits;
     Uint64 redis_key_id;
-    char redis_key[MAX_KEY_VALUE_LEN + 2];
     Uint64 rondb_key;
     Uint32 expiry_date;
     Uint32 value_data_type;
     Uint32 tot_value_len;
     // Technically implicit
     Uint32 num_rows;
-    char value_start[INLINE_VALUE_LEN + 2];
+    char redis_key[MAX_KEY_VALUE_LEN + 4];
+    char value_start[INLINE_VALUE_LEN + 4];
 };
 
 /*
@@ -109,4 +112,13 @@ int init_record(NdbDictionary::Dictionary *dict,
                 NdbRecord *&record);
 
 int init_string_records(NdbDictionary::Dictionary *dict);
+
+struct KeyStorage {
+    NdbTransaction *trans;
+    const char *key_str;
+    Uint32 key_len;
+    Uint32 read_value_size;
+    bool is_found;
+    struct key_table key_row;
+};
 #endif

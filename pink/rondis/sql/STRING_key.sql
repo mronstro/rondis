@@ -13,7 +13,7 @@ CREATE TABLE string_keys(
     tot_value_len INT UNSIGNED NOT NULL,
     -- Technically implicit
     num_rows INT UNSIGNED NOT NULL,
-    value_start VARBINARY(26500) NOT NULL,
+    value_start VARBINARY(4096) NOT NULL,
     -- Redis supports get/set of seconds/milliseconds
     expiry_date INT UNSIGNED NOT NULL,
     -- Easier to sort and delete keys this way

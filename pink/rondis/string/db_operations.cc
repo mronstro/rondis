@@ -65,6 +65,7 @@ int create_key_row(std::string *response,
             trans->getNdbError().code == 0)
         {
             prev_num_rows = recAttr->u_32_value();
+            printf("prev_num_rows = %u\n", prev_num_rows);
             return 0;
         }
     }
@@ -254,22 +255,14 @@ int delete_key_row(std::string *response,
 
 int create_value_row(std::string *response,
                      Ndb *ndb,
-                     const NdbDictionary::Dictionary *dict,
+                     const NdbDictionary::Table *value_tab,
                      NdbTransaction *trans,
                      const char *start_value_ptr,
                      Uint64 rondb_key,
                      Uint32 this_value_len,
                      Uint32 ordinal,
                      char *buf) {
-    const NdbDictionary::Table *tab = dict->getTable(VALUE_TABLE_NAME);
-    if (tab == nullptr)
-    {
-        assign_ndb_err_to_response(response,
-                                   FAILED_CREATE_TABLE_OBJECT,
-                                   ndb->getNdbError());
-        return -1;
-    }
-    NdbOperation *op = trans->getNdbOperation(tab);
+    NdbOperation *op = trans->getNdbOperation(value_tab);
     if (op == nullptr)
     {
         assign_ndb_err_to_response(response,
@@ -293,7 +286,7 @@ int create_value_row(std::string *response,
 
 int create_all_value_rows(std::string *response,
                           Ndb *ndb,
-                          const NdbDictionary::Dictionary *dict,
+                          const NdbDictionary::Table *value_tab,
                           NdbTransaction *trans,
                           Uint64 rondb_key,
                           const char *value_str,
@@ -311,7 +304,7 @@ int create_all_value_rows(std::string *response,
         }
         if (create_value_row(response,
                              ndb,
-                             dict,
+                             value_tab,
                              trans,
                              start_value_ptr,
                              rondb_key,
@@ -337,6 +330,47 @@ int create_all_value_rows(std::string *response,
     return 0;
 }
 
+int prepare_get_simple_key_row(std::string *response,
+                               const NdbDictionary::Table *tab,
+                               NdbTransaction *trans,
+                               struct key_table *key_row) {
+    /**
+     * Mask and options means simply reading all columns
+     * except primary key columns.
+     */
+
+    const Uint32 mask = 0xFC;
+    const unsigned char *mask_ptr = (const unsigned char *)&mask;
+    const NdbOperation *read_op = trans->readTuple(
+        pk_key_record,
+        (const char *)key_row,
+        entire_key_record,
+        (char *)key_row,
+        NdbOperation::LM_CommittedRead,
+        mask_ptr);
+    if (read_op == nullptr)
+    {
+        assign_ndb_err_to_response(response,
+                                   FAILED_GET_OP,
+                                   trans->getNdbError());
+        return RONDB_INTERNAL_ERROR;
+    }
+    return 0;
+}
+
+static void
+simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
+    struct KeyStorage *key_storage = (struct KeyStorage*)aObject;
+}
+
+void prepare_simple_read_transaction(std::string *response,
+                                    NdbTransaction *trans,
+                                    struct KeyStorage *key_storage) {
+    trans->executeAsynchPrepare(NdbTransaction::Commit,
+                                &simple_read_callback,
+                                (void*)key_storage);
+}
+
 int get_simple_key_row(std::string *response,
                        const NdbDictionary::Table *tab,
                        Ndb *ndb,
@@ -347,7 +381,7 @@ int get_simple_key_row(std::string *response,
      * except primary key columns.
      */
 
-    const Uint32 mask = 0x1FC;
+    const Uint32 mask = 0xFC;
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
     const NdbOperation *read_op = trans->readTuple(
         pk_key_record,
@@ -625,6 +659,7 @@ void incr_key_row(std::string *response,
     opts.numExtraGetFinalValues = 1;
     opts.extraGetFinalValues = getvals;
 
+
     if (1)
         opts.optionsPresent |= NdbOperation::OperationOptions::OO_DIRTY_FLAG;
 
@@ -673,7 +708,7 @@ void incr_key_row(std::string *response,
                               sizeof(header_buf),
                               ":%lld\r\n",
                               new_incremented_value);
-    response->assign(header_buf);
+    response->append(header_buf);
     return;
 }
 
