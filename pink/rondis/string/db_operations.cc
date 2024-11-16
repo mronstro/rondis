@@ -387,9 +387,12 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
         key_storage->m_read_value_size = value_len;
     }
     assert(get_ctrl->m_num_keys_outstanding > 0);
+    assert(get_ctrl->m_num_transactions > 0);
     get_ctrl->m_num_keys_outstanding--;
     assert(trans == key_storage->m_trans);
     get_ctrl->m_ndb->closeTransaction(trans);
+    key_storage->m_trans = nullptr;
+    get_ctrl->m_num_transactions--;
 }
 
 void prepare_simple_read_transaction(std::string *response,

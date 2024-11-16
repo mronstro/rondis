@@ -147,6 +147,7 @@ class Ndb;
 struct GetControl {
     Ndb *m_ndb;
     struct KeyStorage *m_key_store;
+    Uint32 m_num_transactions;
     Uint32 m_num_keys_requested;
     Uint32 m_num_keys_outstanding;
     Uint32 m_num_keys_completed_first_pass;

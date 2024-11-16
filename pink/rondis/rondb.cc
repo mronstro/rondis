@@ -46,7 +46,7 @@ int initialize_ndb_objects(const char *connect_string, int num_ndb_objects)
             printf("Failed creating Ndb object nr. %d for cluster connection %d\n", j, connection_num);
             return -1;
         }
-        if (ndb->init() != 0)
+        if (ndb->init(MAX_PARALLEL_READ_KEY_OPS) != 0)
         {
             printf("Failed initializing Ndb object nr. %d for cluster connection %d\n", j, connection_num);
             return -1;

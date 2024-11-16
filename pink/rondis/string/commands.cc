@@ -168,6 +168,21 @@ void rondb_get(Ndb *ndb,
     }
 }
 
+void release_mget(struct GetControl *get_ctrl) {
+    struct KeyStorage *key_storage = get_ctrl->m_key_store;
+    if (get_ctrl->m_num_transactions > 0) {
+        for (Uint32 i = 0; i < get_ctrl->m_num_keys_requested; i++) {
+            if (key_storage[i].m_trans != nullptr) {
+                get_ctrl->m_ndb->closeTransaction(key_storage[i].m_trans);
+                get_ctrl->m_num_transactions--;
+            }
+        }
+    }
+    assert(get_ctrl->m_num_transactions == 0);
+    free(get_ctrl);
+    free(key_storage);
+}
+
 static
 void rondb_mget(Ndb *ndb,
                const pink::RedisCmdArgsType &argv,
@@ -183,69 +198,71 @@ void rondb_mget(Ndb *ndb,
     struct KeyStorage *key_storage;
     key_storage = (struct KeyStorage*)malloc(
       sizeof(struct KeyStorage) * num_keys);
+    if (key_storage == nullptr) {
+        assign_generic_err_to_response(response, FAILED_MALLOC);
+    }
     struct GetControl *get_ctrl = (struct GetControl*)
       malloc(sizeof(struct GetControl));
-    if (key_storage == nullptr || get_ctrl == nullptr) {
+    if (get_ctrl == nullptr) {
         assign_generic_err_to_response(response, FAILED_MALLOC);
-        free(key_storage);
         free(get_ctrl);
     }
     get_ctrl->m_ndb = ndb;
     get_ctrl->m_key_store = key_storage;
-    get_ctrl->m_num_keys_outstanding = 0;
+    get_ctrl->m_num_transactions = 0;
     get_ctrl->m_num_keys_requested = num_keys;
+    get_ctrl->m_num_keys_outstanding = 0;
     get_ctrl->m_num_keys_completed_first_pass = 0;
     get_ctrl->m_num_keys_multi_rows = 0;
     get_ctrl->m_num_keys_multi_rows_completed = 0;
     get_ctrl->m_num_keys_failed = 0;
     get_ctrl->m_error_code = 0;
+    for (Uint32 i = 0; i < num_keys; i++) {
+        Uint32 arg_index = i + arg_index_start;
+        key_storage[i].m_get_ctrl = get_ctrl;
+        key_storage[i].m_trans = nullptr;
+        key_storage[i].m_key_str = argv[arg_index].c_str();
+        key_storage[i].m_key_len = argv[arg_index].size();
+        key_storage[i].m_header_len = 0;
+        key_storage[i].m_num_rows = 0;
+        key_storage[i].m_read_value_size = 0;
+        key_storage[i].m_key_state = KeyState::NotCompleted;
+    }
     if (!setup_metadata(ndb,
                         response,
                         &dict,
                         &tab)) {
-        free(key_storage);
-        free(get_ctrl);
+        release_mget(get_ctrl);
         return;
-    }
-    for (Uint32 i = 0; i < num_keys; i++) {
-        Uint32 arg_index = i + arg_index_start;
-        key_storage[i].m_get_ctrl = get_ctrl;
-        key_storage[i].m_key_state = KeyState::NotCompleted;
-        key_storage[i].m_read_value_size = 0;
-        key_storage[i].m_key_str = argv[arg_index].c_str();
-        key_storage[i].m_key_len = argv[arg_index].size();
-        key_storage[i].m_num_rows = 0;
-        if (!setup_one_transaction(ndb,
-                                   response,
-                                   redis_key_id,
-                                   &key_storage[i].m_key_row,
-                                   key_storage[i].m_key_str,
-                                   key_storage[i].m_key_len,
-                                   tab,
-                                   &key_storage[i].m_trans)) {
-            free(key_storage);
-            free(get_ctrl);
-            return;
-        }
-    }
-    for (Uint32 i = 0; i < num_keys; i++) {
-        if (prepare_get_simple_key_row(response,
-                                       tab,
-                                       key_storage[i].m_trans,
-                                       &key_storage[i].m_key_row) != 0) {
-            free(key_storage);
-            free(get_ctrl);
-            return;
-        }
     }
     Uint32 current_index = 0;
     do {
         Uint32 loop_count = std::min(num_keys - current_index,
                                      (Uint32)MAX_PARALLEL_READ_KEY_OPS);
         for (Uint32 i = 0; i < loop_count; i++) {
+            Uint32 inx = current_index + i;
+            if (!setup_one_transaction(ndb,
+                                       response,
+                                       redis_key_id,
+                                       &key_storage[inx].m_key_row,
+                                       key_storage[inx].m_key_str,
+                                       key_storage[inx].m_key_len,
+                                       tab,
+                                       &key_storage[inx].m_trans)) {
+                release_mget(get_ctrl);
+                return;
+            }
+            get_ctrl->m_num_transactions++;
+            if (prepare_get_simple_key_row(response,
+                                           tab,
+                                           key_storage[inx].m_trans,
+                                           &key_storage[inx].m_key_row) != 0) {
+                release_mget(get_ctrl);
+                return;
+            }
             prepare_simple_read_transaction(response,
-                                            key_storage[current_index + i].m_trans,
-                                            &key_storage[current_index + i]);
+                                            key_storage[inx].m_trans,
+                                            &key_storage[inx]);
         }
         Uint32 current_finished_in_loop = 0;
         Uint32 min_finished = loop_count;
@@ -266,8 +283,7 @@ void rondb_mget(Ndb *ndb,
         assign_err_to_response(response,
                                FAILED_EXECUTE_MGET,
                                get_ctrl->m_error_code);
-        free(key_storage);
-        free(get_ctrl);
+        release_mget(get_ctrl);
         return;
     }
     Uint64 tot_bytes = 0;
@@ -310,8 +326,7 @@ void rondb_mget(Ndb *ndb,
         }
         response->append("\r\n");
     }
-    free(key_storage);
-    free(get_ctrl);
+    release_mget(get_ctrl);
     return;
 }
 
