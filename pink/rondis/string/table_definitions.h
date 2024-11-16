@@ -113,12 +113,46 @@ int init_record(NdbDictionary::Dictionary *dict,
 
 int init_string_records(NdbDictionary::Dictionary *dict);
 
+enum KeyState {
+    /* m_read_value_size undefined */
+    NotCompleted = 0,
+    /* Use m_error_code */
+    CompletedFailed = 1,
+    /* Use m_read_value_size */
+    CompletedSuccess = 2,
+    /* Use m_num_rows */
+    MultiRow = 3,
+    /* Use m_num_rows */
+    CompletedMultiRow = 4
+};
+
+struct GetControl;
 struct KeyStorage {
-    NdbTransaction *trans;
-    const char *key_str;
-    Uint32 key_len;
-    Uint32 read_value_size;
-    bool is_found;
-    struct key_table key_row;
+    struct GetControl *m_get_ctrl;
+    NdbTransaction *m_trans;
+    const char *m_key_str;
+    Uint32 m_key_len;
+    char m_header_buf[20];
+    Uint32 m_header_len;
+    Uint32 m_num_rows;
+    union {
+        Uint32 m_read_value_size;
+        Uint32 m_error_code;
+    };
+    enum KeyState m_key_state;
+    struct key_table m_key_row;
+};
+
+class Ndb;
+struct GetControl {
+    Ndb *m_ndb;
+    struct KeyStorage *m_key_store;
+    Uint32 m_num_keys_requested;
+    Uint32 m_num_keys_outstanding;
+    Uint32 m_num_keys_completed_first_pass;
+    Uint32 m_num_keys_multi_rows;
+    Uint32 m_num_keys_multi_rows_completed;
+    Uint32 m_num_keys_failed;
+    Uint32 m_error_code;
 };
 #endif

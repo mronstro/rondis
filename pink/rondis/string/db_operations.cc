@@ -361,6 +361,35 @@ int prepare_get_simple_key_row(std::string *response,
 static void
 simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
     struct KeyStorage *key_storage = (struct KeyStorage*)aObject;
+    struct GetControl *get_ctrl = key_storage->m_get_ctrl;
+    if (result < 0) {
+        int code = trans->getNdbError().code;
+        if (code == READ_ERROR) {
+            key_storage->m_key_state = KeyState::CompletedFailed;
+            get_ctrl->m_num_keys_completed_first_pass++;
+        } else {
+            key_storage->m_key_state = KeyState::CompletedFailed;
+            get_ctrl->m_num_keys_completed_first_pass++;
+            get_ctrl->m_num_keys_failed++;
+            if (get_ctrl->m_error_code == 0) {
+                get_ctrl->m_error_code = code;
+            }
+        }
+    } else if (key_storage->m_key_row.num_rows > 0) {
+        key_storage->m_key_state = KeyState::CompletedMultiRow;
+        key_storage->m_read_value_size = key_storage->m_key_row.tot_value_len;
+        key_storage->m_num_rows = key_storage->m_key_row.num_rows;
+        get_ctrl->m_num_keys_multi_rows++;
+    } else {
+        key_storage->m_key_state = KeyState::CompletedSuccess;
+        Uint32 value_len = get_length((char*)&key_storage->m_key_row.value_start[0]);
+        assert(value_len == key_storage->m_key_row.tot_value_len);
+        key_storage->m_read_value_size = value_len;
+    }
+    assert(get_ctrl->m_num_keys_outstanding > 0);
+    get_ctrl->m_num_keys_outstanding--;
+    assert(trans == key_storage->m_trans);
+    get_ctrl->m_ndb->closeTransaction(trans);
 }
 
 void prepare_simple_read_transaction(std::string *response,

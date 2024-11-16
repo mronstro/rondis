@@ -16,6 +16,17 @@ void assign_ndb_err_to_response(
     response->assign(buf);
 }
 
+void assign_err_to_response(
+    std::string *response,
+    const char *app_str,
+    int code)
+{
+    char buf[512];
+    snprintf(buf, sizeof(buf), "-ERR %s; NDB(%u)\r\n", app_str, code);
+    std::cout << buf;
+    response->assign(buf);
+}
+
 void assign_generic_err_to_response(
     std::string *response,
     const char *app_str)

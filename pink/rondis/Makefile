@@ -5,9 +5,13 @@ LDFLAGS= -lpthread
 else
 LDFLAGS= -lpthread -lrt -lprotobuf
 endif
+ifdef RONDIS_DEBUG
+CXXFLAGS=-g -std=c++17 -fno-builtin-memcmp
+else
 CXXFLAGS=-O2 -std=c++17 -fno-builtin-memcmp
+endif
 ifeq ($(shell uname -m), x86_64)
-    CXXFLAGS += -msse -msse4.2
+#    CXXFLAGS += -msse -msse4.2
 endif
 
 .PHONY: clean all

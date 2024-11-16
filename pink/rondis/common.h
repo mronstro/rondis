@@ -14,6 +14,7 @@
 #define READ_ERROR 626
 
 int write_formatted(char *buffer, int bufferSize, const char *format, ...);
+void assign_err_to_response(std::string *response, const char *app_str, int code);
 void assign_ndb_err_to_response(std::string *response, const char *app_str, NdbError error);
 void assign_generic_err_to_response(std::string *response, const char *app_str);
 void set_length(char* buf, Uint32 key_len);
@@ -30,6 +31,8 @@ Uint32 get_length(char* buf);
 #define FAILED_INCR_KEY_MULTI_ROW "Failed to increment key, multi-row value"
 #define FAILED_GET_OP "Failed to get NdbOperation object"
 #define FAILED_DEFINE_OP "Failed to define RonDB operation"
+#define FAILED_EXECUTE_MGET "Failed to execute MGET operation"
+#define FAILED_MALLOC "Failed to allocate memory for operation"
 
 // Redis errors
 #define REDIS_UNKNOWN_COMMAND "unknown command '%s'"

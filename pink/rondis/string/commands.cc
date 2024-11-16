@@ -183,37 +183,58 @@ void rondb_mget(Ndb *ndb,
     struct KeyStorage *key_storage;
     key_storage = (struct KeyStorage*)malloc(
       sizeof(struct KeyStorage) * num_keys);
-    struct key_table key_row;
-    const char *key_str = argv[arg_index_start].c_str();
-    Uint32 key_len = argv[arg_index_start].size();
+    struct GetControl *get_ctrl = (struct GetControl*)
+      malloc(sizeof(struct GetControl));
+    if (key_storage == nullptr || get_ctrl == nullptr) {
+        assign_generic_err_to_response(response, FAILED_MALLOC);
+        free(key_storage);
+        free(get_ctrl);
+    }
+    get_ctrl->m_ndb = ndb;
+    get_ctrl->m_key_store = key_storage;
+    get_ctrl->m_num_keys_outstanding = 0;
+    get_ctrl->m_num_keys_requested = num_keys;
+    get_ctrl->m_num_keys_completed_first_pass = 0;
+    get_ctrl->m_num_keys_multi_rows = 0;
+    get_ctrl->m_num_keys_multi_rows_completed = 0;
+    get_ctrl->m_num_keys_failed = 0;
+    get_ctrl->m_error_code = 0;
     if (!setup_metadata(ndb,
                         response,
                         &dict,
                         &tab)) {
+        free(key_storage);
+        free(get_ctrl);
         return;
     }
     for (Uint32 i = 0; i < num_keys; i++) {
         Uint32 arg_index = i + arg_index_start;
-        key_storage[i].is_found = false;
-        key_storage[i].read_value_size = 0;
-        key_storage[i].key_str = argv[arg_index].c_str();
-        key_storage[i].key_len = argv[arg_index].size();
+        key_storage[i].m_get_ctrl = get_ctrl;
+        key_storage[i].m_key_state = KeyState::NotCompleted;
+        key_storage[i].m_read_value_size = 0;
+        key_storage[i].m_key_str = argv[arg_index].c_str();
+        key_storage[i].m_key_len = argv[arg_index].size();
+        key_storage[i].m_num_rows = 0;
         if (!setup_one_transaction(ndb,
                                    response,
                                    redis_key_id,
-                                   &key_storage[i].key_row,
-                                   key_storage[i].key_str,
-                                   key_storage[i].key_len,
+                                   &key_storage[i].m_key_row,
+                                   key_storage[i].m_key_str,
+                                   key_storage[i].m_key_len,
                                    tab,
-                                   &key_storage[i].trans)) {
+                                   &key_storage[i].m_trans)) {
+            free(key_storage);
+            free(get_ctrl);
             return;
         }
     }
     for (Uint32 i = 0; i < num_keys; i++) {
         if (prepare_get_simple_key_row(response,
                                        tab,
-                                       key_storage[i].trans,
-                                       &key_storage[i].key_row) != 0) {
+                                       key_storage[i].m_trans,
+                                       &key_storage[i].m_key_row) != 0) {
+            free(key_storage);
+            free(get_ctrl);
             return;
         }
     }
@@ -223,12 +244,14 @@ void rondb_mget(Ndb *ndb,
                                      (Uint32)MAX_PARALLEL_READ_KEY_OPS);
         for (Uint32 i = 0; i < loop_count; i++) {
             prepare_simple_read_transaction(response,
-                                            key_storage[current_index].trans,
+                                            key_storage[current_index + i].m_trans,
                                             &key_storage[current_index + i]);
         }
         Uint32 current_finished_in_loop = 0;
-        Uint32 min_finished = (loop_count + 1) / 2;
+        Uint32 min_finished = loop_count;
+        get_ctrl->m_num_keys_outstanding = loop_count;
         do {
+          /* Now send off all prepared and wait for half to complete */
           int finished = ndb->sendPollNdb(3000, (int)min_finished);
           assert(finished >= 0);
           current_finished_in_loop += finished;
@@ -239,6 +262,56 @@ void rondb_mget(Ndb *ndb,
      * We are done with the reading process, now it is time to report the
      * result based on the KeyStorage array.
      */
+    if (get_ctrl->m_num_keys_failed > 0) {
+        assign_err_to_response(response,
+                               FAILED_EXECUTE_MGET,
+                               get_ctrl->m_error_code);
+        free(key_storage);
+        free(get_ctrl);
+        return;
+    }
+    Uint64 tot_bytes = 0;
+    for (Uint32 i = 0; i < num_keys; i++) {
+        struct KeyStorage *key_store = &key_storage[i];
+        if (key_store->m_key_state == KeyState::CompletedFailed) {
+            /* Report found NULL */
+            key_store->m_header_len = (Uint32)snprintf(
+                key_store->m_header_buf,
+                sizeof(key_store->m_header_buf),
+                "$-1\r\n");
+        } else {
+            tot_bytes += key_store->m_read_value_size;
+            key_store->m_header_len = (Uint32)snprintf(
+                key_store->m_header_buf,
+                sizeof(key_store->m_header_buf),
+                "$%u\r\n",
+                key_store->m_read_value_size);
+        }
+        tot_bytes += key_store->m_header_len;
+        tot_bytes += 2;
+    }
+    {
+        char header_buf[20];
+        Uint32 header_len = (Uint32)snprintf(header_buf,
+                                             sizeof(header_buf),
+                                             "*%u\r\n",
+                                             num_keys);
+        tot_bytes += (Uint32)header_len;
+        response->reserve(tot_bytes);
+        response->append((const char*)&header_buf[0], header_len);
+    }
+    for (Uint32 i = 0; i < num_keys; i++) {
+        struct KeyStorage *key_store = &key_storage[i];
+        response->append((const char*)&key_store->m_header_buf[0],
+                         key_store->m_header_len);
+        if (key_store->m_key_state == KeyState::CompletedSuccess) {
+            response->append((const char*)&key_store->m_key_row.value_start[2],
+                             key_store->m_read_value_size);
+        }
+        response->append("\r\n");
+    }
+    free(key_storage);
+    free(get_ctrl);
     return;
 }
 
