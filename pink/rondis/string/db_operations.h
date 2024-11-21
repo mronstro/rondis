@@ -78,6 +78,24 @@ int delete_value_rows(std::string *response,
     Since the beginning of the value is saved within the key table, it
     can suffice to read the key table to get the value. If the value is
 */
+int prepare_get_value_row(std::string *response,
+                          NdbTransaction *trans,
+                          struct value_table *value_row);
+
+void prepare_read_value_transaction(NdbTransaction *trans,
+                                    struct KeyStorage *key_storage);
+
+void commit_read_value_transaction(NdbTransaction *trans,
+                                   struct KeyStorage *key_storage);
+
+int prepare_get_key_row(std::string *response,
+                        NdbTransaction *trans,
+                        struct key_table *key_row);
+
+void prepare_read_transaction(std::string *response,
+                              NdbTransaction *trans,
+                              struct KeyStorage *key_storage);
+
 int prepare_get_simple_key_row(std::string *response,
                                const NdbDictionary::Table *tab,
                                NdbTransaction *trans,

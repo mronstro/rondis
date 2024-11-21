@@ -330,6 +330,178 @@ int create_all_value_rows(std::string *response,
     return 0;
 }
 
+static void
+read_callback(int result, NdbTransaction *trans, void *aObject) {
+    struct KeyStorage *key_storage = (struct KeyStorage*)aObject;
+    struct GetControl *get_ctrl = key_storage->m_get_ctrl;
+    assert(get_ctrl->m_num_transactions > 0);
+    assert(trans == key_storage->m_trans);
+    assert(key_storage->m_key_state == KeyState::MultiRow);
+    if (result < 0) {
+        int code = trans->getNdbError().code;
+        if (code == READ_ERROR) {
+            key_storage->m_key_state = KeyState::CompletedFailed;
+            get_ctrl->m_num_keys_completed_first_pass++;
+        } else {
+            key_storage->m_key_state = KeyState::CompletedFailed;
+            get_ctrl->m_num_keys_completed_first_pass++;
+            get_ctrl->m_num_keys_failed++;
+            if (get_ctrl->m_error_code == 0) {
+                get_ctrl->m_error_code = code;
+            }
+        }
+        get_ctrl->m_ndb->closeTransaction(trans);
+        get_ctrl->m_num_transactions--;
+        key_storage->m_trans = nullptr;
+        assert(get_ctrl->m_num_keys_multi_rows > 0);
+        get_ctrl->m_num_keys_multi_rows--;
+    } else if (key_storage->m_key_row.num_rows > 0) {
+        key_storage->m_key_state = KeyState::MultiRowReadValue;
+        key_storage->m_read_value_size = key_storage->m_key_row.tot_value_len;
+        key_storage->m_num_rows = key_storage->m_key_row.num_rows;
+    } else {
+        key_storage->m_key_state = KeyState::CompletedSuccess;
+        Uint32 value_len =
+          get_length((char*)&key_storage->m_key_row.value_start[0]);
+        assert(value_len == key_storage->m_key_row.tot_value_len);
+        key_storage->m_read_value_size = value_len;
+        assert(get_ctrl->m_num_keys_multi_rows > 0);
+        get_ctrl->m_num_keys_multi_rows--;
+    }
+    assert(get_ctrl->m_num_keys_outstanding > 0);
+    get_ctrl->m_num_keys_outstanding--;
+    Uint32 sz = sizeof(struct key_table);
+    assert(get_ctrl->m_num_bytes_outstanding >= sz);
+    get_ctrl->m_num_bytes_outstanding -= sz;
+}
+
+int prepare_get_value_row(std::string *response,
+                          NdbTransaction *trans,
+                          struct value_table *value_row) {
+    /**
+     * Mask and options means simply reading all columns
+     * except primary key columns. In this case only the
+     * value column is read.
+     *
+     * We use SimpleRead to ensure that DBTC is aborted if
+     * something goes wrong with the read, the row should
+     * never be locked since we hold a lock on the key row
+     * at this point.
+     */
+    const Uint32 mask = 0x4;
+    const unsigned char *mask_ptr = (const unsigned char *)&mask;
+    const NdbOperation *read_op = trans->readTuple(
+        pk_value_record,
+        (const char *)value_row,
+        entire_value_record,
+        (char *)value_row,
+        NdbOperation::LM_SimpleRead,
+        mask_ptr);
+    if (read_op == nullptr)
+    {
+        assign_ndb_err_to_response(response,
+                                   FAILED_GET_OP,
+                                   trans->getNdbError());
+        return RONDB_INTERNAL_ERROR;
+    }
+    return 0;
+}
+
+static void
+value_callback(int result, NdbTransaction *trans, void *aObject) {
+    struct KeyStorage *key_store = (struct KeyStorage*)aObject;
+    struct GetControl *get_ctrl = key_store->m_get_ctrl;
+    assert(get_ctrl->m_num_transactions > 0);
+    assert(trans == key_store->m_trans);
+    assert(key_store->m_key_state == KeyState::MultiRowReadValue);
+    if (result < 0) {
+        int code = trans->getNdbError().code;
+        key_store->m_key_state = KeyState::CompletedFailed;
+        get_ctrl->m_num_keys_completed_first_pass++;
+        get_ctrl->m_num_keys_failed++;
+        if (get_ctrl->m_error_code == 0) {
+            get_ctrl->m_error_code = code;
+        }
+        get_ctrl->m_ndb->closeTransaction(trans);
+        get_ctrl->m_num_transactions--;
+        key_store->m_trans = nullptr;
+        assert(get_ctrl->m_num_keys_multi_rows > 0);
+        get_ctrl->m_num_keys_multi_rows--;
+    } else {
+        Uint32 current_pos = key_store->m_current_pos;
+        char *complex_value = key_store->m_complex_value;
+        for (Uint32 i = 0; i < key_store->m_num_current_read_rows; i++) {
+          Uint32 inx = key_store->m_first_value_row + i;
+          struct value_table *value_row = &get_ctrl->m_value_rows[inx];
+          Uint32 value_len = get_length((char*)&value_row->value[0]);
+          memcpy(&complex_value[current_pos], &value_row->value[2], value_len);
+          current_pos += value_len;
+        }
+        key_store->m_current_pos = current_pos;
+        if (key_store->m_num_rows == key_store->m_num_read_rows) {
+            key_store->m_key_state = KeyState::CompletedMultiRow;
+            assert(get_ctrl->m_num_keys_multi_rows > 0);
+            get_ctrl->m_num_keys_multi_rows--;
+        }
+    }
+    assert(get_ctrl->m_num_keys_outstanding > 0);
+    get_ctrl->m_num_keys_outstanding--;
+    Uint32 sz = sizeof(struct value_table) * key_store->m_num_current_read_rows;
+    assert(get_ctrl->m_num_bytes_outstanding >= sz);
+    get_ctrl->m_num_bytes_outstanding -= sz;
+    key_store->m_num_current_read_rows = 0;
+
+}
+
+void prepare_read_value_transaction(NdbTransaction *trans,
+                                    struct KeyStorage *key_store) {
+    trans->executeAsynchPrepare(NdbTransaction::NoCommit,
+                                &value_callback,
+                                (void*)key_store);
+}
+
+void commit_read_value_transaction(NdbTransaction *trans,
+                                   struct KeyStorage *key_store) {
+    trans->executeAsynchPrepare(NdbTransaction::Commit,
+                                &value_callback,
+                                (void*)key_store);
+}
+
+int prepare_get_key_row(std::string *response,
+                        NdbTransaction *trans,
+                        struct key_table *key_row) {
+    /**
+     * Mask and options means simply reading all columns
+     * except primary key columns.
+     */
+
+    const Uint32 mask = 0xFC;
+    const unsigned char *mask_ptr = (const unsigned char *)&mask;
+    const NdbOperation *read_op = trans->readTuple(
+        pk_key_record,
+        (const char *)key_row,
+        entire_key_record,
+        (char *)key_row,
+        NdbOperation::LM_Read,
+        mask_ptr);
+    if (read_op == nullptr)
+    {
+        assign_ndb_err_to_response(response,
+                                   FAILED_GET_OP,
+                                   trans->getNdbError());
+        return RONDB_INTERNAL_ERROR;
+    }
+    return 0;
+}
+
+void prepare_read_transaction(std::string *response,
+                              NdbTransaction *trans,
+                              struct KeyStorage *key_storage) {
+    trans->executeAsynchPrepare(NdbTransaction::NoCommit,
+                                &read_callback,
+                                (void*)key_storage);
+}
+
 int prepare_get_simple_key_row(std::string *response,
                                const NdbDictionary::Table *tab,
                                NdbTransaction *trans,
@@ -376,9 +548,7 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
             }
         }
     } else if (key_storage->m_key_row.num_rows > 0) {
-        key_storage->m_key_state = KeyState::CompletedMultiRow;
-        key_storage->m_read_value_size = key_storage->m_key_row.tot_value_len;
-        key_storage->m_num_rows = key_storage->m_key_row.num_rows;
+        key_storage->m_key_state = KeyState::MultiRow;
         get_ctrl->m_num_keys_multi_rows++;
     } else {
         key_storage->m_key_state = KeyState::CompletedSuccess;

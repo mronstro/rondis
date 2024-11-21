@@ -11,11 +11,8 @@
     - one NdbRecord defining the columns we want to fetch
 */
 
-#define MAX_PARALLEL_READ_KEY_OPS 100
 
-#define MAX_VALUES_TO_WRITE 4
 #define MAX_KEY_VALUE_LEN 3000
-#define STRING_REDIS_KEY_ID 0
 
 /*
     HSET KEY TABLE
@@ -123,8 +120,16 @@ enum KeyState {
     /* Use m_num_rows */
     MultiRow = 3,
     /* Use m_num_rows */
-    CompletedMultiRow = 4
+    MultiRowReadValue = 4,
+    MultiRowReadAll = 5,
+    CompletedMultiRow = 6
 };
+
+#define MAX_PARALLEL_READ_KEY_OPS 100
+#define MAX_VALUES_TO_WRITE 4
+#define STRING_REDIS_KEY_ID 0
+#define MAX_PARALLEL_VALUE_READS 2
+#define MAX_OUTSTANDING_BYTES (512 * 1024)
 
 struct GetControl;
 struct KeyStorage {
@@ -132,9 +137,14 @@ struct KeyStorage {
     NdbTransaction *m_trans;
     const char *m_key_str;
     Uint32 m_key_len;
+    char *m_complex_value;
     char m_header_buf[20];
     Uint32 m_header_len;
+    Uint32 m_first_value_row;
+    Uint32 m_current_pos;
     Uint32 m_num_rows;
+    Uint32 m_num_read_rows;
+    Uint32 m_num_current_read_rows;
     union {
         Uint32 m_read_value_size;
         Uint32 m_error_code;
@@ -147,12 +157,14 @@ class Ndb;
 struct GetControl {
     Ndb *m_ndb;
     struct KeyStorage *m_key_store;
+    struct value_table *m_value_rows;
+    Uint32 m_next_value_row;
     Uint32 m_num_transactions;
     Uint32 m_num_keys_requested;
     Uint32 m_num_keys_outstanding;
+    Uint32 m_num_bytes_outstanding;
     Uint32 m_num_keys_completed_first_pass;
     Uint32 m_num_keys_multi_rows;
-    Uint32 m_num_keys_multi_rows_completed;
     Uint32 m_num_keys_failed;
     Uint32 m_error_code;
 };

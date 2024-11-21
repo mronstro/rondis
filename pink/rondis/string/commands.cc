@@ -26,7 +26,9 @@ bool setup_metadata(
     const NdbDictionary::Table *tab = dict->getTable(KEY_TABLE_NAME);
     if (tab == nullptr)
     {
-        assign_ndb_err_to_response(response, FAILED_CREATE_TABLE_OBJECT, dict->getNdbError());
+        assign_ndb_err_to_response(response,
+                                   FAILED_CREATE_TABLE_OBJECT,
+                                   dict->getNdbError());
         return false;
     }
     *ret_tab = tab;
@@ -170,17 +172,204 @@ void rondb_get(Ndb *ndb,
 
 void release_mget(struct GetControl *get_ctrl) {
     struct KeyStorage *key_storage = get_ctrl->m_key_store;
-    if (get_ctrl->m_num_transactions > 0) {
-        for (Uint32 i = 0; i < get_ctrl->m_num_keys_requested; i++) {
-            if (key_storage[i].m_trans != nullptr) {
-                get_ctrl->m_ndb->closeTransaction(key_storage[i].m_trans);
-                get_ctrl->m_num_transactions--;
-            }
+    for (Uint32 i = 0; i < get_ctrl->m_num_keys_requested; i++) {
+        if (key_storage[i].m_trans != nullptr) {
+            get_ctrl->m_ndb->closeTransaction(key_storage[i].m_trans);
+            get_ctrl->m_num_transactions--;
         }
+        if (key_storage[i].m_complex_value != nullptr) {
+            free(key_storage[i].m_complex_value);
+        }
+    }
+    if (get_ctrl->m_value_rows != nullptr) {
+        free(get_ctrl->m_value_rows);
     }
     assert(get_ctrl->m_num_transactions == 0);
     free(get_ctrl);
     free(key_storage);
+}
+
+static int get_simple_rows(Ndb *ndb,
+                           const NdbDictionary::Table *tab,
+                           std::string *response,
+                           Uint64 redis_key_id,
+                           struct KeyStorage *key_storage,
+                           struct GetControl *get_ctrl,
+                           Uint32 loop_count,
+                           Uint32 current_index) {
+    for (Uint32 i = 0; i < loop_count; i++) {
+        Uint32 inx = current_index + i;
+        if (!setup_one_transaction(ndb,
+                                   response,
+                                   redis_key_id,
+                                   &key_storage[inx].m_key_row,
+                                   key_storage[inx].m_key_str,
+                                   key_storage[inx].m_key_len,
+                                   tab,
+                                   &key_storage[inx].m_trans)) {
+            return 1;
+        }
+        get_ctrl->m_num_transactions++;
+        if (prepare_get_simple_key_row(response,
+                                       tab,
+                                       key_storage[inx].m_trans,
+                                       &key_storage[inx].m_key_row) != 0) {
+            return 1;
+        }
+        prepare_simple_read_transaction(response,
+                                        key_storage[inx].m_trans,
+                                        &key_storage[inx]);
+    }
+    Uint32 current_finished_in_loop = 0;
+    Uint32 min_finished = loop_count;
+    get_ctrl->m_num_keys_outstanding = loop_count;
+    do {
+        /**
+         * Now send off all prepared and wait for all to complete.
+         * Since we are using CommitedRead there is no risk of
+         * deadlocks by waiting for all to complete here.
+         */
+        int finished = ndb->sendPollNdb(3000, (int)min_finished);
+        assert(finished >= 0);
+        current_finished_in_loop += finished;
+    } while (current_finished_in_loop < loop_count);
+    return 0;
+}
+
+static int send_value_read(std::string *response,
+                           struct KeyStorage *key_store,
+                           struct GetControl *get_ctrl) {
+    if (key_store->m_num_read_rows == 0) {
+        /* Before we read the data we need to allocate memory for the row */
+        key_store->m_complex_value = (char*)
+          malloc(key_store->m_read_value_size);
+        if (key_store->m_complex_value == nullptr) {
+          assign_generic_err_to_response(response, FAILED_MALLOC);
+          return 1;
+        }
+        key_store->m_first_value_row = get_ctrl->m_next_value_row;
+        get_ctrl->m_next_value_row += MAX_PARALLEL_VALUE_READS;
+    }
+    Uint32 i = 0;
+    Uint32 value_row_index = key_store->m_first_value_row;
+    do {
+        struct value_table *value_row =
+          &get_ctrl->m_value_rows[value_row_index + i];
+        struct key_table *key_row = &key_store->m_key_row;
+        value_row->rondb_key = key_store->m_key_row.rondb_key;
+        value_row->ordinal = key_store->m_num_read_rows;
+        int ret_code = prepare_get_value_row(response,
+                                             key_store->m_trans,
+                                             value_row);
+        if (ret_code != 0) return 1;
+        i++;
+        key_store->m_num_read_rows++;
+    } while (i < MAX_PARALLEL_VALUE_READS &&
+             key_store->m_num_read_rows < key_store->m_num_rows);
+    key_store->m_num_current_read_rows = i;
+    get_ctrl->m_num_bytes_outstanding += i * sizeof(struct value_table);
+    if (key_store->m_num_read_rows == key_store->m_num_rows) {
+        commit_read_value_transaction(key_store->m_trans, key_store);
+        key_store->m_key_state = KeyState::MultiRowReadAll;
+    }
+    else
+    {
+        prepare_read_value_transaction(key_store->m_trans, key_store);
+    }
+}
+
+static int send_next_read_batch(std::string *response,
+                                struct KeyStorage *key_storage,
+                                struct GetControl *get_ctrl,
+                                Uint32 current_index,
+                                Uint32 loop_count,
+                                Uint32 &current_finished) {
+    if (get_ctrl->m_num_keys_multi_rows == 0) {
+        return 0;
+    }
+    for (Uint32 i = 0; i < loop_count; i++) {
+        Uint32 inx = current_index + i;
+        if (key_storage[inx].m_key_state == KeyState::MultiRowReadValue) {
+            if (get_ctrl->m_num_bytes_outstanding > MAX_OUTSTANDING_BYTES) {
+                return 0;
+            }
+            int ret_code = send_value_read(response,
+                                           &key_storage[inx],
+                                           get_ctrl);
+            if (ret_code != 0) return 1;
+            assert(current_finished > 0);
+            current_finished--;
+        }
+    }
+    return 0;
+}
+
+static int get_complex_rows(Ndb *ndb,
+                            const NdbDictionary::Table *tab,
+                            std::string *response,
+                            Uint64 redis_key_id,
+                            struct KeyStorage *key_storage,
+                            struct GetControl *get_ctrl,
+                            Uint32 loop_count,
+                            Uint32 current_index) {
+    Uint32 num_complex_reads = 0;
+    for (Uint32 i = 0; i < loop_count; i++) {
+        Uint32 inx = current_index + i;
+        if (key_storage[inx].m_key_state == KeyState::MultiRow) {
+            num_complex_reads++;
+            if (!setup_one_transaction(ndb,
+                                       response,
+                                       redis_key_id,
+                                       &key_storage[inx].m_key_row,
+                                       key_storage[inx].m_key_str,
+                                       key_storage[inx].m_key_len,
+                                       tab,
+                                       &key_storage[inx].m_trans)) {
+                return 1;
+            }
+            get_ctrl->m_num_transactions++;
+            if (prepare_get_key_row(response,
+                                    key_storage[inx].m_trans,
+                                    &key_storage[inx].m_key_row) != 0) {
+                return 1;
+            }
+            prepare_read_transaction(response,
+                                     key_storage[inx].m_trans,
+                                     &key_storage[inx]);
+        }
+    }
+    get_ctrl->m_value_rows = (struct value_table*)malloc(
+      num_complex_reads * MAX_PARALLEL_VALUE_READS *
+      sizeof(struct value_table));
+    if (get_ctrl->m_value_rows == nullptr) {
+        assign_generic_err_to_response(response, FAILED_MALLOC);
+        return 1;
+    }
+    assert(num_complex_reads == get_ctrl->m_num_keys_multi_rows);
+    Uint32 current_finished_in_loop = 0;
+    get_ctrl->m_num_keys_outstanding = num_complex_reads;
+    get_ctrl->m_num_bytes_outstanding = loop_count * sizeof(struct key_table);
+    do {
+        /**
+         * Now send off all prepared and wait for at least one to complete.
+         * We cannot wait for multiple ones since we could then run into
+         * deadlock issues. The transactions are independent of each other,
+         * so if one of them has to wait for a lock, it should not stop
+         * other transactions from progressing.
+         */
+        int finished = ndb->sendPollNdb(3000, (int)1);
+        assert(finished >= 0);
+        current_finished_in_loop += finished;
+        if (get_ctrl->m_num_keys_failed > 0) return 0;
+        int ret_code = send_next_read_batch(response,
+                                            key_storage,
+                                            get_ctrl,
+                                            current_index,
+                                            loop_count,
+                                            current_finished_in_loop);
+        if (ret_code != 0) return 1;
+    } while (current_finished_in_loop < num_complex_reads);
+    return 0;
 }
 
 static
@@ -200,21 +389,25 @@ void rondb_mget(Ndb *ndb,
       sizeof(struct KeyStorage) * num_keys);
     if (key_storage == nullptr) {
         assign_generic_err_to_response(response, FAILED_MALLOC);
+        return;
     }
     struct GetControl *get_ctrl = (struct GetControl*)
       malloc(sizeof(struct GetControl));
     if (get_ctrl == nullptr) {
         assign_generic_err_to_response(response, FAILED_MALLOC);
         free(get_ctrl);
+        return;
     }
     get_ctrl->m_ndb = ndb;
     get_ctrl->m_key_store = key_storage;
+    get_ctrl->m_value_rows = nullptr;
+    get_ctrl->m_next_value_row = 0;
     get_ctrl->m_num_transactions = 0;
     get_ctrl->m_num_keys_requested = num_keys;
     get_ctrl->m_num_keys_outstanding = 0;
+    get_ctrl->m_num_bytes_outstanding = 0;
     get_ctrl->m_num_keys_completed_first_pass = 0;
     get_ctrl->m_num_keys_multi_rows = 0;
-    get_ctrl->m_num_keys_multi_rows_completed = 0;
     get_ctrl->m_num_keys_failed = 0;
     get_ctrl->m_error_code = 0;
     for (Uint32 i = 0; i < num_keys; i++) {
@@ -223,8 +416,12 @@ void rondb_mget(Ndb *ndb,
         key_storage[i].m_trans = nullptr;
         key_storage[i].m_key_str = argv[arg_index].c_str();
         key_storage[i].m_key_len = argv[arg_index].size();
+        key_storage[i].m_complex_value = nullptr;
         key_storage[i].m_header_len = 0;
+        key_storage[i].m_first_value_row = 0;
+        key_storage[i].m_current_pos = 0;
         key_storage[i].m_num_rows = 0;
+        key_storage[i].m_num_read_rows = 0;
         key_storage[i].m_read_value_size = 0;
         key_storage[i].m_key_state = KeyState::NotCompleted;
     }
@@ -239,42 +436,44 @@ void rondb_mget(Ndb *ndb,
     do {
         Uint32 loop_count = std::min(num_keys - current_index,
                                      (Uint32)MAX_PARALLEL_READ_KEY_OPS);
-        for (Uint32 i = 0; i < loop_count; i++) {
-            Uint32 inx = current_index + i;
-            if (!setup_one_transaction(ndb,
+        int ret_code = get_simple_rows(ndb,
+                                       tab,
                                        response,
                                        redis_key_id,
-                                       &key_storage[inx].m_key_row,
-                                       key_storage[inx].m_key_str,
-                                       key_storage[inx].m_key_len,
-                                       tab,
-                                       &key_storage[inx].m_trans)) {
-                release_mget(get_ctrl);
-                return;
-            }
-            get_ctrl->m_num_transactions++;
-            if (prepare_get_simple_key_row(response,
-                                           tab,
-                                           key_storage[inx].m_trans,
-                                           &key_storage[inx].m_key_row) != 0) {
-                release_mget(get_ctrl);
-                return;
-            }
-            prepare_simple_read_transaction(response,
-                                            key_storage[inx].m_trans,
-                                            &key_storage[inx]);
+                                       key_storage,
+                                       get_ctrl,
+                                       loop_count,
+                                       current_index);
+        if (ret_code != 0) {
+            release_mget(get_ctrl);
+            return;
         }
-        Uint32 current_finished_in_loop = 0;
-        Uint32 min_finished = loop_count;
-        get_ctrl->m_num_keys_outstanding = loop_count;
-        do {
-          /* Now send off all prepared and wait for half to complete */
-          int finished = ndb->sendPollNdb(3000, (int)min_finished);
-          assert(finished >= 0);
-          current_finished_in_loop += finished;
-        } while (current_finished_in_loop < loop_count);
+        /**
+         * We have finished the initial round of simple GETs. Now time
+         * to handle those that require multi-row GETs. Since we used
+         * an optimistic approach we need to start this from scratch
+         * again for these new GETs.
+         */
+        Uint32 num_complex_reads = 0;
+        assert(get_ctrl->m_num_transactions == 0);
+        assert(get_ctrl->m_num_keys_outstanding == 0);
+        if (get_ctrl->m_num_keys_multi_rows > 0 &&
+            get_ctrl->m_num_keys_failed == 0) {
+            int ret_code = get_complex_rows(ndb,
+                                            tab,
+                                            response,
+                                            redis_key_id,
+                                            key_storage,
+                                            get_ctrl,
+                                            loop_count,
+                                            current_index);
+            if (ret_code != 0) {
+                release_mget(get_ctrl);
+                return;
+            }
+        }
         current_index += loop_count;
-    } while (current_index < num_keys);
+    } while (current_index < num_keys && get_ctrl->m_num_keys_failed == 0);
     /**
      * We are done with the reading process, now it is time to report the
      * result based on the KeyStorage array.
@@ -322,6 +521,12 @@ void rondb_mget(Ndb *ndb,
                          key_store->m_header_len);
         if (key_store->m_key_state == KeyState::CompletedSuccess) {
             response->append((const char*)&key_store->m_key_row.value_start[2],
+                             key_store->m_read_value_size);
+        }
+        else
+        {
+            assert(key_store->m_key_state == KeyState::CompletedMultiRow);
+            response->append((const char*)&key_store->m_complex_value,
                              key_store->m_read_value_size);
         }
         response->append("\r\n");
