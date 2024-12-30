@@ -120,9 +120,11 @@ enum KeyState {
     /* Use m_num_rows */
     MultiRow = 3,
     /* Use m_num_rows */
-    MultiRowReadValue = 4,
-    MultiRowReadAll = 5,
-    CompletedMultiRow = 6
+    CompletedMultiRowSuccess = 4,
+    MultiRowReadValue = 5,
+    MultiRowReadValueSent = 6,
+    MultiRowReadAll = 7,
+    CompletedMultiRow = 8
 };
 
 #define MAX_PARALLEL_READ_KEY_OPS 100
@@ -135,11 +137,12 @@ struct GetControl;
 struct KeyStorage {
     struct GetControl *m_get_ctrl;
     NdbTransaction *m_trans;
+    char *m_complex_value;
     const char *m_key_str;
     Uint32 m_key_len;
-    char *m_complex_value;
     char m_header_buf[20];
     Uint32 m_header_len;
+    Uint32 m_index;
     Uint32 m_first_value_row;
     Uint32 m_current_pos;
     Uint32 m_num_rows;

@@ -11,6 +11,13 @@
 #include "../common.h"
 #include "table_definitions.h"
 
+#define DEBUG_MGET_CMD 1
+#ifdef DEBUG_MGET_CMD
+#define DEB_MGET_CMD(arglist) do { printf arglist ; } while (0)
+#else
+#define DEB_MGET_CMD(arglist)
+#endif
+
 static
 bool setup_metadata(
     Ndb *ndb,
@@ -249,6 +256,17 @@ static int send_value_read(std::string *response,
         }
         key_store->m_first_value_row = get_ctrl->m_next_value_row;
         get_ctrl->m_next_value_row += MAX_PARALLEL_VALUE_READS;
+
+        /* Copy row from key_row to complex value now that we allocated it */
+        Uint32 value_len = get_length((char*)
+            &key_store->m_key_row.value_start[0]);
+        key_store->m_current_pos = value_len;
+        assert(value_len == INLINE_VALUE_LEN);
+        memcpy(key_store->m_complex_value,
+               &key_store->m_key_row.value_start[2],
+               value_len);
+        DEB_MGET_CMD(("Copied from key_row %u bytes for key %u\n",
+            value_len, key_store->m_index));
     }
     Uint32 i = 0;
     Uint32 value_row_index = key_store->m_first_value_row;
@@ -268,6 +286,7 @@ static int send_value_read(std::string *response,
              key_store->m_num_read_rows < key_store->m_num_rows);
     key_store->m_num_current_read_rows = i;
     get_ctrl->m_num_bytes_outstanding += i * sizeof(struct value_table);
+    get_ctrl->m_num_keys_outstanding++;
     if (key_store->m_num_read_rows == key_store->m_num_rows) {
         commit_read_value_transaction(key_store->m_trans, key_store);
         key_store->m_key_state = KeyState::MultiRowReadAll;
@@ -275,7 +294,16 @@ static int send_value_read(std::string *response,
     else
     {
         prepare_read_value_transaction(key_store->m_trans, key_store);
+        key_store->m_key_state = KeyState::MultiRowReadValueSent;
     }
+    DEB_MGET_CMD(("Prepare send value read: Key %u, read rows: %u"
+                  ", num_rows: %u, num_read_rows: %u, key_state: %u\n",
+                  key_store->m_index,
+                  key_store->m_num_current_read_rows,
+                  key_store->m_num_rows,
+                  key_store->m_num_read_rows,
+                  key_store->m_key_state));
+    return 0;
 }
 
 static int send_next_read_batch(std::string *response,
@@ -300,6 +328,14 @@ static int send_next_read_batch(std::string *response,
             assert(current_finished > 0);
             current_finished--;
         }
+        else if (key_storage[inx].m_key_state ==
+                 KeyState::CompletedMultiRowSuccess) {
+            get_ctrl->m_num_keys_outstanding++;
+            commit_read_value_transaction(key_storage[inx].m_trans,
+                                          &key_storage[inx]);
+            assert(current_finished > 0);
+            current_finished--;
+        }
     }
     return 0;
 }
@@ -317,6 +353,7 @@ static int get_complex_rows(Ndb *ndb,
         Uint32 inx = current_index + i;
         if (key_storage[inx].m_key_state == KeyState::MultiRow) {
             num_complex_reads++;
+            DEB_MGET_CMD(("Start complex read of key id %u\n", inx));
             if (!setup_one_transaction(ndb,
                                        response,
                                        redis_key_id,
@@ -348,7 +385,8 @@ static int get_complex_rows(Ndb *ndb,
     assert(num_complex_reads == get_ctrl->m_num_keys_multi_rows);
     Uint32 current_finished_in_loop = 0;
     get_ctrl->m_num_keys_outstanding = num_complex_reads;
-    get_ctrl->m_num_bytes_outstanding = loop_count * sizeof(struct key_table);
+    get_ctrl->m_num_bytes_outstanding =
+        loop_count * (sizeof(struct key_table) - MAX_KEY_VALUE_LEN);
     do {
         /**
          * Now send off all prepared and wait for at least one to complete.
@@ -357,9 +395,17 @@ static int get_complex_rows(Ndb *ndb,
          * so if one of them has to wait for a lock, it should not stop
          * other transactions from progressing.
          */
+        DEB_MGET_CMD(("Call sendPollNdb with %u keys, %u keys and %u bytes"
+                      " out\n",
+                      get_ctrl->m_num_keys_multi_rows,
+                      get_ctrl->m_num_keys_outstanding,
+                      get_ctrl->m_num_bytes_outstanding));
+
         int finished = ndb->sendPollNdb(3000, (int)1);
         assert(finished >= 0);
         current_finished_in_loop += finished;
+        DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
+            finished));
         if (get_ctrl->m_num_keys_failed > 0) return 0;
         int ret_code = send_next_read_batch(response,
                                             key_storage,
@@ -412,6 +458,7 @@ void rondb_mget(Ndb *ndb,
     get_ctrl->m_error_code = 0;
     for (Uint32 i = 0; i < num_keys; i++) {
         Uint32 arg_index = i + arg_index_start;
+        key_storage[i].m_index = i;
         key_storage[i].m_get_ctrl = get_ctrl;
         key_storage[i].m_trans = nullptr;
         key_storage[i].m_key_str = argv[arg_index].c_str();
@@ -432,6 +479,7 @@ void rondb_mget(Ndb *ndb,
         release_mget(get_ctrl);
         return;
     }
+    DEB_MGET_CMD(("MGET of %u keys\n", num_keys));
     Uint32 current_index = 0;
     do {
         Uint32 loop_count = std::min(num_keys - current_index,
@@ -448,6 +496,10 @@ void rondb_mget(Ndb *ndb,
             release_mget(get_ctrl);
             return;
         }
+        DEB_MGET_CMD(("%u keys, %u multi rows, %u completed\n",
+                      num_keys,
+                      get_ctrl->m_num_keys_multi_rows,
+                      get_ctrl->m_num_keys_completed_first_pass));
         /**
          * We have finished the initial round of simple GETs. Now time
          * to handle those that require multi-row GETs. Since we used
@@ -494,6 +546,7 @@ void rondb_mget(Ndb *ndb,
                 key_store->m_header_buf,
                 sizeof(key_store->m_header_buf),
                 "$-1\r\n");
+            DEB_MGET_CMD(("Key id %u was NULL\n", i));
         } else {
             tot_bytes += key_store->m_read_value_size;
             key_store->m_header_len = (Uint32)snprintf(
@@ -501,6 +554,8 @@ void rondb_mget(Ndb *ndb,
                 sizeof(key_store->m_header_buf),
                 "$%u\r\n",
                 key_store->m_read_value_size);
+            DEB_MGET_CMD(("Key id %u was of size %u\n",
+                          i, key_store->m_read_value_size));
         }
         tot_bytes += key_store->m_header_len;
         tot_bytes += 2;
