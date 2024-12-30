@@ -358,15 +358,12 @@ read_callback(int result, NdbTransaction *trans, void *aObject) {
     assert(get_ctrl->m_num_transactions > 0);
     assert(trans == key_store->m_trans);
     assert(key_store->m_key_state == KeyState::MultiRow);
-    if (result < 0) {
-        int code = trans->getNdbError().code;
+    int code = trans->getNdbError().code;
+    if (code != 0) {
         DEB_KS(("Key %u had error: %d\n", key_store->m_index, code));
-        if (code == READ_ERROR) {
-            key_store->m_key_state = KeyState::CompletedFailed;
-            get_ctrl->m_num_keys_completed_first_pass++;
-        } else {
-            key_store->m_key_state = KeyState::CompletedFailed;
-            get_ctrl->m_num_keys_completed_first_pass++;
+        key_store->m_key_state = KeyState::CompletedFailed;
+        get_ctrl->m_num_keys_completed_first_pass++;
+        if (code != READ_ERROR) {
             get_ctrl->m_num_keys_failed++;
             if (get_ctrl->m_error_code == 0) {
                 get_ctrl->m_error_code = code;
@@ -462,9 +459,9 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
     }
     assert(key_store->m_key_state == KeyState::MultiRowReadValueSent ||
            key_store->m_key_state == KeyState::MultiRowReadAll);
-    if (result < 0) {
-        int code = trans->getNdbError().code;
-        DEB_KS(("Key %u had error %d reading valued\n",
+    int code = trans->getNdbError().code;
+    if (code != 0) {
+        DEB_KS(("Key %u had error %d reading value\n",
           key_store->m_index, code));
         key_store->m_key_state = KeyState::CompletedFailed;
         get_ctrl->m_num_keys_completed_first_pass++;
@@ -603,15 +600,15 @@ static void
 simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
     struct KeyStorage *key_storage = (struct KeyStorage*)aObject;
     struct GetControl *get_ctrl = key_storage->m_get_ctrl;
-    if (result < 0) {
-        int code = trans->getNdbError().code;
+    int code = trans->getNdbError().code;
+    if (code != 0) {
+        key_storage->m_key_state = KeyState::CompletedFailed;
+        get_ctrl->m_num_keys_completed_first_pass++;
         if (code == READ_ERROR) {
-            key_storage->m_key_state = KeyState::CompletedFailed;
-            get_ctrl->m_num_keys_completed_first_pass++;
+            DEB_HSET_KEY(("key %u had READ_ERROR\n", key_storage->m_index));
         } else {
-            key_storage->m_key_state = KeyState::CompletedFailed;
-            get_ctrl->m_num_keys_completed_first_pass++;
             get_ctrl->m_num_keys_failed++;
+            DEB_HSET_KEY(("key %u had ERROR: %d\n", key_storage->m_index, code));
             if (get_ctrl->m_error_code == 0) {
                 get_ctrl->m_error_code = code;
             }
@@ -619,11 +616,16 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
     } else if (key_storage->m_key_row.num_rows > 0) {
         key_storage->m_key_state = KeyState::MultiRow;
         get_ctrl->m_num_keys_multi_rows++;
+        DEB_HSET_KEY(("key %u required multi-row handling: num_rows: %u\n",
+          key_storage->m_index, key_storage->m_key_row.num_rows));
     } else {
         key_storage->m_key_state = KeyState::CompletedSuccess;
         Uint32 value_len = get_length((char*)&key_storage->m_key_row.value_start[0]);
         assert(value_len == key_storage->m_key_row.tot_value_len);
         key_storage->m_read_value_size = value_len;
+        get_ctrl->m_num_keys_completed_first_pass++;
+        DEB_HSET_KEY(("key %u was read, size: %u\n",
+          key_storage->m_index, value_len));
     }
     assert(get_ctrl->m_num_keys_outstanding > 0);
     assert(get_ctrl->m_num_transactions > 0);
