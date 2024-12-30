@@ -546,8 +546,9 @@ void rondb_mget(Ndb *ndb,
             key_store->m_header_len = (Uint32)snprintf(
                 key_store->m_header_buf,
                 sizeof(key_store->m_header_buf),
-                "$-1\r\n");
-            DEB_MGET_CMD(("Key id %u was NULL\n", i));
+                "$-1");
+            DEB_MGET_CMD(("Key id %u was NULL, len: %u\n",
+              i, key_store->m_header_len));
         } else {
             tot_bytes += key_store->m_read_value_size;
             key_store->m_header_len = (Uint32)snprintf(
@@ -555,11 +556,13 @@ void rondb_mget(Ndb *ndb,
                 sizeof(key_store->m_header_buf),
                 "$%u\r\n",
                 key_store->m_read_value_size);
-            DEB_MGET_CMD(("Key id %u was of size %u\n",
-                          i, key_store->m_read_value_size));
+            DEB_MGET_CMD(("Key id %u was of size %u, len: %u\n",
+              i,
+              key_store->m_read_value_size,
+              key_store->m_header_len));
         }
-        tot_bytes += key_store->m_header_len;
         tot_bytes += 2;
+        tot_bytes += key_store->m_header_len;
     }
     {
         char header_buf[20];
@@ -575,7 +578,8 @@ void rondb_mget(Ndb *ndb,
         struct KeyStorage *key_store = &key_storage[i];
         response->append((const char*)&key_store->m_header_buf[0],
                          key_store->m_header_len);
-        if (key_store->m_key_state == KeyState::CompletedSuccess) {
+        if (key_store->m_key_state == KeyState::CompletedSuccess ||
+            key_store->m_key_state == KeyState::CompletedMultiRowSuccess) {
             response->append((const char*)&key_store->m_key_row.value_start[2],
                              key_store->m_read_value_size);
         }

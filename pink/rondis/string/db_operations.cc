@@ -358,6 +358,7 @@ read_callback(int result, NdbTransaction *trans, void *aObject) {
     assert(get_ctrl->m_num_transactions > 0);
     assert(trans == key_store->m_trans);
     assert(key_store->m_key_state == KeyState::MultiRow);
+    (void)result;
     int code = trans->getNdbError().code;
     if (code != 0) {
         DEB_KS(("Key %u had error: %d\n", key_store->m_index, code));
@@ -445,6 +446,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
     struct GetControl *get_ctrl = key_store->m_get_ctrl;
     assert(get_ctrl->m_num_transactions > 0);
     assert(trans == key_store->m_trans);
+    (void)result;
     if (key_store->m_key_state == KeyState::CompletedMultiRowSuccess) {
         /* Only commit of Locked Read performed here */
         get_ctrl->m_ndb->closeTransaction(trans);
@@ -470,6 +472,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
             get_ctrl->m_error_code = code;
         }
         get_ctrl->m_ndb->closeTransaction(trans);
+        assert(get_ctrl->m_num_transactions > 0);
         get_ctrl->m_num_transactions--;
         key_store->m_trans = nullptr;
         assert(get_ctrl->m_num_keys_multi_rows > 0);
@@ -486,6 +489,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
           assert(calc_pos == current_pos);
           memcpy(&complex_value[calc_pos], &value_row->value[2], value_len);
           Uint32 old_pos = current_pos;
+          (void)old_pos;
           current_pos += value_len;
           DEB_KS(("Read value of %u bytes, new pos: %u old_pos: %u (%u), key: %u\n",
             value_len, current_pos, old_pos, calc_pos, key_store->m_index));
@@ -496,6 +500,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
             assert(get_ctrl->m_num_keys_multi_rows > 0);
             get_ctrl->m_num_keys_multi_rows--;
             get_ctrl->m_ndb->closeTransaction(trans);
+            assert(get_ctrl->m_num_transactions > 0);
             get_ctrl->m_num_transactions--;
             key_store->m_trans = nullptr;
         }
@@ -600,6 +605,8 @@ static void
 simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
     struct KeyStorage *key_storage = (struct KeyStorage*)aObject;
     struct GetControl *get_ctrl = key_storage->m_get_ctrl;
+    (void)result;
+    assert(trans == key_storage->m_trans);
     int code = trans->getNdbError().code;
     if (code != 0) {
         key_storage->m_key_state = KeyState::CompletedFailed;
@@ -630,10 +637,9 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
     assert(get_ctrl->m_num_keys_outstanding > 0);
     assert(get_ctrl->m_num_transactions > 0);
     get_ctrl->m_num_keys_outstanding--;
-    assert(trans == key_storage->m_trans);
+    get_ctrl->m_num_transactions--;
     get_ctrl->m_ndb->closeTransaction(trans);
     key_storage->m_trans = nullptr;
-    get_ctrl->m_num_transactions--;
 }
 
 void prepare_simple_read_transaction(std::string *response,
