@@ -12,6 +12,7 @@
 #include "table_definitions.h"
 
 #define DEBUG_MGET_CMD 1
+
 #ifdef DEBUG_MGET_CMD
 #define DEB_MGET_CMD(arglist) do { printf arglist ; } while (0)
 #else
@@ -395,7 +396,7 @@ static int get_complex_rows(Ndb *ndb,
          * so if one of them has to wait for a lock, it should not stop
          * other transactions from progressing.
          */
-        DEB_MGET_CMD(("Call sendPollNdb with %u keys, %u keys and %u bytes"
+        DEB_MGET_CMD(("Call sendPollNdb with %u keys, %u keys out and %u bytes"
                       " out\n",
                       get_ctrl->m_num_keys_multi_rows,
                       get_ctrl->m_num_keys_outstanding,
@@ -578,11 +579,14 @@ void rondb_mget(Ndb *ndb,
             response->append((const char*)&key_store->m_key_row.value_start[2],
                              key_store->m_read_value_size);
         }
+        else if (key_store->m_key_state == KeyState::CompletedMultiRow)
+        {
+            response->append((const char*)key_store->m_complex_value,
+                             key_store->m_read_value_size);
+        }
         else
         {
-            assert(key_store->m_key_state == KeyState::CompletedMultiRow);
-            response->append((const char*)&key_store->m_complex_value,
-                             key_store->m_read_value_size);
+            assert(key_store->m_key_state == KeyState::CompletedFailed);
         }
         response->append("\r\n");
     }
@@ -905,7 +909,7 @@ void rondb_hset_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_mset(ndb, argv, response, redis_key_id);
+  return rondb_set(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hincr_command(Ndb *ndb,

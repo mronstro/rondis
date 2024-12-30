@@ -142,6 +142,13 @@ int write_hset_key_table(Ndb *ndb,
     NdbTransaction *trans = ndb->startTransaction(tab,
                                                   (const char*)&key_row.redis_key_id,
                                                   key_len + 2);
+    if (trans == nullptr)
+    {
+        assign_ndb_err_to_response(response,
+                                   "Failed to create transaction object",
+                                   ndb->getNdbError());
+        return -1;
+    }
     /* Define the actual operation to be sent to RonDB data node. */
     const NdbOperation *op = trans->writeTuple(
         pk_hset_key_record,

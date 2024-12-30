@@ -614,7 +614,7 @@ class MmapRWFile : public RWFile
    MmapRWFile(const std::string& fname, int fd, size_t page_size)
      : filename_(fname),
      fd_(fd),
-     page_size_(page_size),
+     //page_size_(page_size),
      map_size_(Roundup(65536, page_size)),
      base_(NULL) {
        DoMapRegion();
@@ -649,7 +649,7 @@ class MmapRWFile : public RWFile
    }
    std::string filename_;
    int fd_;
-   size_t page_size_;
+   //size_t page_size_;
    size_t map_size_;
    char* base_;
 };

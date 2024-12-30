@@ -12,6 +12,8 @@
 #include "interpreted_code.h"
 
 #define DEBUG_KS
+#define DEBUG_CTRL
+#define DEBUG_HSET_KEY
 
 #ifdef DEBUG_KS
 #define DEB_KS(arglist) do { printf arglist ; } while (0)
@@ -23,6 +25,12 @@
 #define DEB_CTRL(arglist) do { printf arglist ; } while (0)
 #else
 #define DEB_CTRL(arglist)
+#endif
+
+#ifdef DEBUG_HSET_KEY
+#define DEB_HSET_KEY(arglist) do { printf arglist ; } while (0)
+#else
+#define DEB_HSET_KEY(arglist)
 #endif
 
 NdbRecord *pk_hset_key_record = nullptr;
@@ -79,7 +87,6 @@ int create_key_row(std::string *response,
             trans->getNdbError().code == 0)
         {
             prev_num_rows = recAttr->u_32_value();
-            printf("prev_num_rows = %u\n", prev_num_rows);
             return 0;
         }
     }
@@ -406,14 +413,17 @@ int prepare_get_value_row(std::string *response,
     /**
      * Mask and options means simply reading all columns
      * except primary key columns. In this case only the
-     * value column is read.
+     * value column is read. We read the ordinal column
+     * as well to ensure that we don't rely on order of
+     * signals arriving. Normally they should be arriving
+     * in order, but it is safer to not rely on that.
      *
      * We use SimpleRead to ensure that DBTC is aborted if
      * something goes wrong with the read, the row should
      * never be locked since we hold a lock on the key row
      * at this point.
      */
-    const Uint32 mask = 0x4;
+    const Uint32 mask = 0x6;
     const unsigned char *mask_ptr = (const unsigned char *)&mask;
     const NdbOperation *read_op = trans->readTuple(
         pk_value_record,
@@ -474,10 +484,14 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
           Uint32 inx = key_store->m_first_value_row + i;
           struct value_table *value_row = &get_ctrl->m_value_rows[inx];
           Uint32 value_len = get_length((char*)&value_row->value[0]);
-          memcpy(&complex_value[current_pos], &value_row->value[2], value_len);
+          Uint32 calc_pos = INLINE_VALUE_LEN +
+            (value_row->ordinal * EXTENSION_VALUE_LEN);
+          assert(calc_pos == current_pos);
+          memcpy(&complex_value[calc_pos], &value_row->value[2], value_len);
+          Uint32 old_pos = current_pos;
           current_pos += value_len;
-          DEB_KS(("Read value of %u bytes, new pos: %u\n",
-            value_len, current_pos));
+          DEB_KS(("Read value of %u bytes, new pos: %u old_pos: %u (%u), key: %u\n",
+            value_len, current_pos, old_pos, calc_pos, key_store->m_index));
         }
         key_store->m_current_pos = current_pos;
         if (key_store->m_num_rows == key_store->m_num_read_rows) {
@@ -1012,6 +1026,7 @@ int rondb_get_redis_key_id(Ndb *ndb,
                                                redis_key_id,
                                                response);
         if (ret_code < 0) {
+            DEB_HSET_KEY(("Failed get_unique_redis_key_id, err: %d\n", ret_code));
             return -1;
         }
         ret_code = write_hset_key_table(ndb,
@@ -1020,12 +1035,17 @@ int rondb_get_redis_key_id(Ndb *ndb,
                                         redis_key_id,
                                         response);
         if (ret_code < 0) {
+            DEB_HSET_KEY(("Failed write_hset_key_table, err: %d\n", ret_code));
             return -1;
         }
         redis_key_id_hash[std_key_str] = redis_key_id;
+        DEB_HSET_KEY(("Created redis_key_id = %llu for key: %s\n",
+          redis_key_id, key_str));
     } else {
-        /* Found local redis_key_id */
         redis_key_id = it->second;
+        /* Found local redis_key_id */
+        DEB_HSET_KEY(("Found local redis_key_id = %llu for key: %s\n",
+          redis_key_id, key_str));
     }
     return 0;
 }

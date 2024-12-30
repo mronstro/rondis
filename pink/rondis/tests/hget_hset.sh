@@ -8,11 +8,10 @@ HASH_KEY="key_$HASH_KEY_SUFFIX"
 KEY_SUFFIX=${2:-0}
 KEY="test_key_$KEY_SUFFIX"
 
-# Function to set a value and retrieve it, then verify if it matches
-function hset_and_hget() {
+function check_set() {
     local field="$1"
     local value="$2"
-    
+
     # SET the value in Redis
     if [[ -f "$value" ]]; then
         set_output=$(redis-cli --pipe <<EOF
@@ -23,12 +22,20 @@ EOF
         set_output=$(redis-cli HSET "$HASH_KEY" "$field" "$value")
     fi
 
-    #echo $set_output
+    echo $set_output
     if [[ $set_output == ERR* ]]; then
-        echo "FAIL: Could not SET $field with given value"
+        echo "FAIL: Could not SET $field with given value" >&2
         exit 1
     fi
-    
+}
+
+# Function to set a value and retrieve it, then verify if it matches
+function hset_and_hget() {
+    local field="$1"
+    local value="$2"
+
+    check_set "$field" "$value"
+
     # GET the value
     local result=$(redis-cli HGET "$HASH_KEY" "$field")
 
