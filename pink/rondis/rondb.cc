@@ -46,7 +46,7 @@ int initialize_ndb_objects(const char *connect_string, int num_ndb_objects)
             printf("Failed creating Ndb object nr. %d for cluster connection %d\n", j, connection_num);
             return -1;
         }
-        if (ndb->init(MAX_PARALLEL_READ_KEY_OPS) != 0)
+        if (ndb->init(MAX_PARALLEL_KEY_OPS) != 0)
         {
             printf("Failed initializing Ndb object nr. %d for cluster connection %d\n", j, connection_num);
             return -1;
@@ -199,7 +199,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
         }
         else if (strcasecmp(command, "MSET") == 0)
         {
-            if (argv.size() >= 3 && (argv.size() % 2) == 0)
+            if (argv.size() >= 3 && (argv.size() % 2) == 1)
             {
                 rondb_mset_command(ndb, argv, response);
             }
