@@ -1234,7 +1234,16 @@ void rondb_mset(Ndb *ndb,
         release_mset(get_ctrl);
         return;
     }
-    response->append("+OK\r\n");
+    if (redis_key_id == STRING_REDIS_KEY_ID) {
+        response->append("+OK\r\n");
+    } else {
+        char buf[20];
+        snprintf(buf,
+                 sizeof(buf),
+                 ":%u\r\n",
+                 get_ctrl->m_num_keys_requested);
+        response->append(&buf[0]);
+    }
     release_mset(get_ctrl);
     return;
 }
@@ -1353,7 +1362,7 @@ void rondb_hset_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_set(ndb, argv, response, redis_key_id);
+  return rondb_mset(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hincr_command(Ndb *ndb,
