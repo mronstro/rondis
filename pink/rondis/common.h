@@ -32,6 +32,7 @@ Uint32 get_length(char* buf);
 #define FAILED_GET_OP "Failed to get NdbOperation object"
 #define FAILED_DEFINE_OP "Failed to define RonDB operation"
 #define FAILED_EXECUTE_MGET "Failed to execute MGET operation"
+#define FAILED_EXECUTE_MSET "Failed to execute MSET operation"
 #define FAILED_MALLOC "Failed to allocate memory for operation"
 
 // Redis errors

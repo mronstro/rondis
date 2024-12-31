@@ -111,34 +111,37 @@ int init_record(NdbDictionary::Dictionary *dict,
 int init_string_records(NdbDictionary::Dictionary *dict);
 
 enum KeyState {
-    /* m_read_value_size undefined */
+    /* m_value_size undefined */
     NotCompleted = 0,
     /* Use m_error_code */
     CompletedFailed = 1,
-    /* Use m_read_value_size */
+    /* Use m_value_size */
     CompletedSuccess = 2,
     /* Use m_num_rows */
     MultiRow = 3,
     /* Use m_num_rows */
     CompletedMultiRowSuccess = 4,
-    MultiRowReadValue = 5,
-    MultiRowReadValueSent = 6,
-    MultiRowReadAll = 7,
+    MultiRowRWValue = 5,
+    MultiRowRWValueSent = 6,
+    MultiRowRWAll = 7,
     CompletedMultiRow = 8
 };
 
-#define MAX_PARALLEL_READ_KEY_OPS 100
+#define MAX_PARALLEL_KEY_OPS 100
 #define MAX_VALUES_TO_WRITE 4
 #define STRING_REDIS_KEY_ID 0
-#define MAX_PARALLEL_VALUE_READS 2
+#define MAX_PARALLEL_VALUE_RWS 2
 #define MAX_OUTSTANDING_BYTES (512 * 1024)
+#define DELETE_BYTES 200
 
 struct GetControl;
 struct KeyStorage {
     struct GetControl *m_get_ctrl;
     NdbTransaction *m_trans;
-    char *m_complex_value;
+    NdbRecAttr *m_rec_attr;
+    char *m_value_ptr;
     const char *m_key_str;
+    Uint64 m_rondb_key;
     Uint32 m_key_len;
     char m_header_buf[20];
     Uint32 m_header_len;
@@ -146,10 +149,11 @@ struct KeyStorage {
     Uint32 m_first_value_row;
     Uint32 m_current_pos;
     Uint32 m_num_rows;
-    Uint32 m_num_read_rows;
-    Uint32 m_num_current_read_rows;
+    Uint32 m_num_rw_rows;
+    Uint32 m_num_current_rw_rows;
+    Uint32 m_prev_num_rows;
     union {
-        Uint32 m_read_value_size;
+        Uint32 m_value_size;
         Uint32 m_error_code;
     };
     enum KeyState m_key_state;

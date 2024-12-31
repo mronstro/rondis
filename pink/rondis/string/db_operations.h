@@ -25,7 +25,6 @@ int create_key_row(std::string *response,
                    Uint32 row_state);
 
 int write_data_to_key_op(std::string *response,
-                         const NdbOperation **ndb_op,
                          const NdbDictionary::Table *tab,
                          NdbTransaction *trans,
                          Uint64 redis_key_id,
@@ -35,7 +34,7 @@ int write_data_to_key_op(std::string *response,
                          const char *value_str,
                          Uint32 tot_value_len,
                          Uint32 num_value_rows,
-                         Uint32 &prev_num_rows,
+                         bool commit_flag,
                          Uint32 row_state,
                          NdbRecAttr **recAttr);
 
@@ -74,6 +73,20 @@ int delete_value_rows(std::string *response,
                       Uint64 rondb_key,
                       Uint32 start_ordinal,
                       Uint32 end_ordinal);
+
+int prepare_set_value_row(std::string *response, KeyStorage *key_storage);
+int prepare_delete_value_row(std::string *response,
+                             struct KeyStorage *key_store,
+                             Uint32 ordinal);
+void prepare_write_value_transaction(NdbTransaction *trans,
+                                     struct KeyStorage *key_store);
+void commit_write_value_transaction(NdbTransaction *trans,
+                                    struct KeyStorage *key_store);
+void prepare_write_transaction(NdbTransaction *trans,
+                               struct KeyStorage *key_store);
+void prepare_simple_write_transaction(std::string *response,
+                                      NdbTransaction *trans,
+                                      struct KeyStorage *key_storage);
 /*
     Since the beginning of the value is saved within the key table, it
     can suffice to read the key table to get the value. If the value is
