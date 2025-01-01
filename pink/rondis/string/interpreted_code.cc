@@ -190,37 +190,55 @@ int write_key_row_no_commit(std::string *response,
     const NdbDictionary::Column *num_rows_col = tab->getColumn(KEY_TABLE_COL_num_rows);
     const NdbDictionary::Column *rondb_key_col = tab->getColumn(KEY_TABLE_COL_rondb_key);
     code.load_op_type(REG1);                          // Read operation type into register 1
-    code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); // Inserts go to label 0
+    code.branch_eq_const(REG1, RONDB_INSERT, LABEL3); // Inserts go to label 0
     /* UPDATE */
     code.read_attr(REG7, num_rows_col);
+    code.read_attr(REG6, rondb_key_col);
+    code.load_const_u64(REG5, rondb_key);
+    code.load_const_u16(REG4, 0);
     code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
-    if (rondb_key != 0) {
-        /* No need to write rondb_key, already set */
-        code.branch_ne_const(REG7, Uint16(0), LABEL0);
-        /* Write new, going from small row to large row, use new rondb_key */
-        code.load_const_u64(REG6, rondb_key);
-        code.write_interpreter_output(REG6, OUTPUT_INDEX_1); // Write into output index 1
-    }
-    else
-    {
-        /* Write NULL into rondb_key column since we are writing a small row */
-        code.load_const_null(REG6);
-        code.write_interpreter_output(REG7, OUTPUT_INDEX_1); // Write into output index 1
-    }
-    code.write_attr(rondb_key_col, REG6);
+    code.branch_eq_null(REG6, LABEL0);
+    code.branch_eq_const(REG5, Uint16(0), LABEL1);
+
+    /* prev_num_rows > 0 and num_rows > 0 */
+    code.write_interpreter_output(REG6, OUTPUT_INDEX_1); // Write into output index 1
+    code.interpret_exit_ok();
+
+    /* rondb_key NULL => prev_num_rows == 0 */
     code.def_label(LABEL0);
+    code.branch_eq_const(REG5, Uint16(0), LABEL2);
+
+    /* prev_num_rows == 0 and num_rows > 0 */
+    code.write_interpreter_output(REG5, OUTPUT_INDEX_1); // Write into output index 1
+    code.write_attr(rondb_key_col, REG5);
+    code.interpret_exit_ok();
+
+    code.def_label(LABEL1);
+    /* prev_num_rows > 0 and num_rows == 0 */
+    code.write_interpreter_output(REG6, OUTPUT_INDEX_1); // Write into output index 1
+    code.load_const_null(REG3);
+    code.write_attr(rondb_key_col, REG3);
+    code.interpret_exit_ok();
+
+    code.def_label(LABEL2);
+    /* prev_num_rows == 0 and num_rows == 0 */
+    code.write_interpreter_output(REG4, OUTPUT_INDEX_1); // Write into output index 1
     code.interpret_exit_ok();
 
     /* INSERT */
-    code.def_label(LABEL1);
+    code.def_label(LABEL3);
+    code.load_const_u16(REG7, 0);
     if (rondb_key != 0) {
         /* Write rondb_key, we have multi row and it is an INSERT */
         code.load_const_u64(REG6, rondb_key);
         code.write_attr(rondb_key_col, REG6);
+        code.write_interpreter_output(REG6, OUTPUT_INDEX_1); // Write into output index 0
     }
-    code.load_const_u16(REG7, 0);
+    else
+    {
+        code.write_interpreter_output(REG7, OUTPUT_INDEX_1); // Write into output index 0
+    }
     code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
-    code.write_interpreter_output(REG7, OUTPUT_INDEX_1); // Write into output index 0
     code.interpret_exit_ok();
 
     // Program end, now compile code

@@ -15,6 +15,8 @@
 #define REG7 7
 #define LABEL0 0
 #define LABEL1 1
+#define LABEL2 2
+#define LABEL3 3
 
 #define MEMORY_OFFSET_START 0
 #define MEMORY_OFFSET_LEN_BYTES 4

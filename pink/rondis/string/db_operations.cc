@@ -215,6 +215,7 @@ read_callback(int result, NdbTransaction *trans, void *aObject) {
         key_store->m_key_state = KeyState::MultiRowRWValue;
         key_store->m_value_size = key_store->m_key_row.tot_value_len;
         key_store->m_num_rows = key_store->m_key_row.num_rows;
+        key_store->m_rondb_key = key_store->m_key_row.rondb_key;
         DEB_KS(("LockRead Key %u with size: %u, num_rows: %u"
                 ", key_state: %u\n",
           key_store->m_index,
@@ -227,6 +228,7 @@ read_callback(int result, NdbTransaction *trans, void *aObject) {
           get_length((char*)&key_store->m_key_row.value_start[0]);
         assert(value_len == key_store->m_key_row.tot_value_len);
         key_store->m_value_size = value_len;
+        key_store->m_rondb_key = 0;
         DEB_KS(("LockRead Key %u completed, no value rows\n",
           key_store->m_index));
     }
@@ -498,9 +500,10 @@ int prepare_set_value_row(std::string *response,
     set_length(&value_row.value[0], len);
     value_row.ordinal = key_store->m_num_rw_rows;
     value_row.rondb_key = key_store->m_rondb_key;
-    DEB_MSET(("Set value rondb_key: %llu, ordinal: %u\n",
+    DEB_MSET(("Set value key: %u, rondb_key: %llu, ordinal: %u\n",
+      key_store->m_index,
       key_store->m_rondb_key,
-      key_store->m_num_rows));
+      key_store->m_num_rw_rows));
     key_store->m_num_rw_rows++;
     key_store->m_current_pos += len;
     /* Mask means writing all columns. */
@@ -645,13 +648,18 @@ write_callback(int result, NdbTransaction *trans, void *aObject) {
     } else {
         key_storage->m_prev_num_rows =
           key_storage->m_rec_attr_prev_num_rows->u_32_value();
+        key_storage->m_rondb_key =
+          key_storage->m_rec_attr_rondb_key->u_32_value();
         key_storage->m_current_pos = INLINE_VALUE_LEN;
         key_storage->m_key_state = KeyState::MultiRowRWValue;
         assert(get_ctrl->m_num_transactions > 0);
         assert(get_ctrl->m_num_keys_outstanding > 0);
         get_ctrl->m_num_keys_outstanding--;
-        DEB_HSET_KEY(("key %u simple write succeeded\n",
-          key_storage->m_index));
+        DEB_HSET_KEY(("key %u simple write succeeded, prev_num_rows: %u"
+                      ", rondb_key: %llu\n",
+          key_storage->m_index,
+          key_storage->m_prev_num_rows,
+          key_storage->m_rondb_key));
     }
 }
 

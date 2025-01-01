@@ -160,9 +160,11 @@ static int set_simple_rows(Ndb *ndb,
             key_storage[inx].m_num_rows = num_value_rows;
             key_storage[inx].m_key_state = KeyState::MultiRow;
             get_ctrl->m_num_keys_multi_rows++;
-            DEB_HSET_KEY(("key %u requires complex write\n", inx));
+            DEB_HSET_KEY(("key %u requires complex write, rondb_key: %llu\n",
+              inx, key_storage[inx].m_rondb_key));
             continue;
         }
+        DEB_MSET_CMD(("Try simple write with value_len: %u\n", value_len));
         if (!setup_one_transaction(ndb,
                                    response,
                                    redis_key_id,
