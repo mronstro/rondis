@@ -483,6 +483,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
           Uint32 calc_pos = INLINE_VALUE_LEN +
             (value_row->ordinal * EXTENSION_VALUE_LEN);
           assert(calc_pos == current_pos);
+          assert(calc_pos + value_len <= key_store->m_value_size);
           memcpy(&complex_value[calc_pos], &value_row->value[2], value_len);
           Uint32 old_pos = current_pos;
           (void)old_pos;
@@ -798,6 +799,7 @@ write_callback(int result, NdbTransaction *trans, void *aObject) {
         key_storage->m_trans = nullptr;
     } else {
         key_storage->m_prev_num_rows = key_storage->m_rec_attr->u_32_value();
+        key_storage->m_current_pos = INLINE_VALUE_LEN;
         key_storage->m_key_state = KeyState::MultiRowRWValue;
         assert(get_ctrl->m_num_transactions > 0);
         assert(get_ctrl->m_num_keys_outstanding > 0);
