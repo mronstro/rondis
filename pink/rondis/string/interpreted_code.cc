@@ -45,7 +45,7 @@ int initNdbCodeIncr(std::string *response,
     code->add_const_reg(REG2, REG3, NUM_LEN_BYTES); // New value_start length
     code->write_size_mem(REG3, REG0);               // Write back length bytes in memory
 
-    code->write_interpreter_output(REG5, OUTPUT_INDEX); // Write into output index 0
+    code->write_interpreter_output(REG5, OUTPUT_INDEX_0); // Write into output index 0
     code->write_from_mem(value_start_col, REG6, REG2);  // Write to column
     code->write_attr(tot_value_len_col, REG3);
     code->interpret_exit_ok();
@@ -54,7 +54,7 @@ int initNdbCodeIncr(std::string *response,
     code->def_label(LABEL1);
     code->load_const_u16(REG5, INITIAL_INT_VALUE);
     code->load_const_u16(REG3, INITIAL_INT_STRING_LEN);
-    code->write_interpreter_output(REG5, OUTPUT_INDEX); // Write into output index 0
+    code->write_interpreter_output(REG5, OUTPUT_INDEX_0); // Write into output index 0
 
     Uint32 insert_value;
     Uint8 *insert_value_ptr = (Uint8 *)&insert_value;
@@ -104,14 +104,14 @@ int write_hset_key_table(Ndb *ndb,
     code.branch_eq_const(REG1, RONDB_INSERT, LABEL0); // Inserts go to label 0
     /* UPDATE */
     code.read_attr(REG7, redis_key_id_col);
-    code.write_interpreter_output(REG7, OUTPUT_INDEX); // Write into output index 0
+    code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
     code.interpret_exit_ok();
 
     /* INSERT */
     code.def_label(LABEL0);
     code.load_const_u64(REG7, redis_key_id);
     code.write_attr(redis_key_id_col, REG7);
-    code.write_interpreter_output(REG7, OUTPUT_INDEX); // Write into output index 0
+    code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
     code.interpret_exit_ok();
 
     // Program end, now compile code
@@ -185,19 +185,42 @@ int write_hset_key_table(Ndb *ndb,
 
 int write_key_row_no_commit(std::string *response,
                             NdbInterpretedCode &code,
-                            const NdbDictionary::Table *tab) {
+                            const NdbDictionary::Table *tab,
+                            Uint64 rondb_key) {
     const NdbDictionary::Column *num_rows_col = tab->getColumn(KEY_TABLE_COL_num_rows);
+    const NdbDictionary::Column *rondb_key_col = tab->getColumn(KEY_TABLE_COL_rondb_key);
     code.load_op_type(REG1);                          // Read operation type into register 1
-    code.branch_eq_const(REG1, RONDB_INSERT, LABEL0); // Inserts go to label 0
+    code.branch_eq_const(REG1, RONDB_INSERT, LABEL1); // Inserts go to label 0
     /* UPDATE */
     code.read_attr(REG7, num_rows_col);
-    code.write_interpreter_output(REG7, OUTPUT_INDEX); // Write into output index 0
+    code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
+    if (rondb_key != 0) {
+        /* No need to write rondb_key, already set */
+        code.branch_ne_const(REG7, Uint16(0), LABEL0);
+        /* Write new, going from small row to large row, use new rondb_key */
+        code.load_const_u64(REG6, rondb_key);
+        code.write_interpreter_output(REG6, OUTPUT_INDEX_1); // Write into output index 1
+    }
+    else
+    {
+        /* Write NULL into rondb_key column since we are writing a small row */
+        code.load_const_null(REG6);
+        code.write_interpreter_output(REG7, OUTPUT_INDEX_1); // Write into output index 1
+    }
+    code.write_attr(rondb_key_col, REG6);
+    code.def_label(LABEL0);
     code.interpret_exit_ok();
 
     /* INSERT */
-    code.def_label(LABEL0);
+    code.def_label(LABEL1);
+    if (rondb_key != 0) {
+        /* Write rondb_key, we have multi row and it is an INSERT */
+        code.load_const_u64(REG6, rondb_key);
+        code.write_attr(rondb_key_col, REG6);
+    }
     code.load_const_u16(REG7, 0);
-    code.write_interpreter_output(REG7, OUTPUT_INDEX); // Write into output index 0
+    code.write_interpreter_output(REG7, OUTPUT_INDEX_0); // Write into output index 0
+    code.write_interpreter_output(REG7, OUTPUT_INDEX_1); // Write into output index 0
     code.interpret_exit_ok();
 
     // Program end, now compile code

@@ -116,82 +116,6 @@ bool setup_transaction(
                                  ret_trans);
 }
 
-/*
-    A successful GET will return in this format:
-        $5
-        Hello
-    where:
-    - $ indicates a Bulk String reply
-    - 5 is the length of the value ("Hello" has 5 characters)
-    - Hello is the actual value stored at the key
-    Special cases:
-        $-1
-    The key does not exist.
-        $0
-    The key exists but has no value (empty string).
-*/
-static
-void rondb_get(Ndb *ndb,
-               const pink::RedisCmdArgsType &argv,
-               std::string *response,
-               Uint64 redis_key_id)
-{
-    Uint32 arg_index_start = (redis_key_id == STRING_REDIS_KEY_ID) ? 1 : 2;
-    const NdbDictionary::Dictionary *dict;
-    const NdbDictionary::Table *tab = nullptr;
-    NdbTransaction *trans = nullptr;
-    struct key_table key_row;
-    const char *key_str = argv[arg_index_start].c_str();
-    Uint32 key_len = argv[arg_index_start].size();
-    if (!setup_transaction(ndb,
-                           response,
-                           redis_key_id,
-                           &key_row,
-                           key_str,
-                           key_len,
-                           &dict,
-                           &tab,
-                           &trans))
-      return;
-
-    int ret_code = get_simple_key_row(
-        response,
-        tab,
-        ndb,
-        trans,
-        &key_row);
-    ndb->closeTransaction(trans);
-    if ((ret_code != 0) || key_row.num_rows == 0)
-    {
-        return;
-    }
-    {
-        /*
-            Our value uses value rows, so a more complex read is required.
-            We're starting from scratch here since we'll use a shared lock
-            on the key table this time we read from it.
-        */
-        trans = ndb->startTransaction(tab,
-                                      (const char*)&key_row.redis_key_id,
-                                      key_len + 10);
-        if (trans == nullptr)
-        {
-            assign_ndb_err_to_response(response,
-                                       FAILED_CREATE_TXN_OBJECT,
-                                       ndb->getNdbError());
-            return;
-        }
-        get_complex_key_row(response,
-                            dict,
-                            tab,
-                            ndb,
-                            trans,
-                            &key_row);
-        ndb->closeTransaction(trans);
-        return;
-    }
-}
-
 void release_mset(struct GetControl *get_ctrl) {
     struct KeyStorage *key_storage = get_ctrl->m_key_store;
     for (Uint32 i = 0; i < get_ctrl->m_num_keys_requested; i++) {
@@ -263,7 +187,8 @@ static int set_simple_rows(Ndb *ndb,
                                             key_storage[inx].m_num_rows,
                                             true,
                                             row_state,
-                                            &key_storage[inx].m_rec_attr);
+                                            &key_storage[inx].m_rec_attr_prev_num_rows,
+                                            &key_storage[inx].m_rec_attr_rondb_key);
         if (ret_code != 0) {
             return 1;
         }
@@ -441,7 +366,8 @@ static int set_complex_rows(Ndb *ndb,
                                                 key_storage[inx].m_num_rows,
                                                 false,
                                                 row_state,
-                                                &key_storage[inx].m_rec_attr);
+                                                &key_storage[inx].m_rec_attr_prev_num_rows,
+                                                &key_storage[inx].m_rec_attr_rondb_key);
             if (ret_code != 0) {
                 return 1;
             }
@@ -937,180 +863,6 @@ void rondb_mget(Ndb *ndb,
 }
 
 static
-void rondb_set(
-    Ndb *ndb,
-    const pink::RedisCmdArgsType &argv,
-    std::string *response,
-    Uint64 redis_key_id)
-{
-    Uint32 arg_index_start = (redis_key_id == STRING_REDIS_KEY_ID) ? 1 : 2;
-    const NdbDictionary::Dictionary *dict;
-    const NdbDictionary::Table *tab = nullptr;
-    NdbTransaction *trans = nullptr;
-    struct key_table key_row;
-    const char *key_str = argv[arg_index_start].c_str();
-    Uint32 key_len = argv[arg_index_start].size();
-    if (!setup_transaction(ndb,
-                           response,
-                           redis_key_id,
-                           &key_row,
-                           key_str,
-                           key_len,
-                           &dict,
-                           &tab,
-                           &trans))
-      return;
-
-    const char *value_str = argv[arg_index_start + 1].c_str();
-    Uint32 value_len = argv[arg_index_start + 1].size();
-    char varsize_param[EXTENSION_VALUE_LEN + 500];
-    Uint32 num_value_rows = 0;
-    Uint32 prev_num_rows = 0;
-    Uint64 rondb_key = 0;
-
-    if (value_len > INLINE_VALUE_LEN)
-    {
-        /**
-         * The row doesn't fit in one RonDB row, create more rows
-         * in the value_tables table.
-         *
-         * We also use the generated rondb_key which is the foreign
-         * key column in the key_table table such that
-         * deleting the row in the main table ensures that all
-         * value rows are also deleted.
-         */
-        Uint32 extended_value_len = value_len - INLINE_VALUE_LEN;
-        num_value_rows = extended_value_len / EXTENSION_VALUE_LEN;
-        if (extended_value_len % EXTENSION_VALUE_LEN != 0)
-        {
-            num_value_rows++;
-        }
-
-        if (rondb_get_rondb_key(tab, rondb_key, ndb, response) != 0)
-        {
-            ndb->closeTransaction(trans);
-            return;
-        }
-    }
-
-    int ret_code = 0;
-    ret_code = create_key_row(response,
-                              tab,
-                              trans,
-                              redis_key_id,
-                              rondb_key,
-                              key_str,
-                              key_len,
-                              value_str,
-                              value_len,
-                              num_value_rows,
-                              prev_num_rows,
-                              Uint32(0));
-    if (ret_code != 0)
-    {
-        // Often unnecessary since it already failed to commit
-        ndb->closeTransaction(trans);
-        if (ret_code != RESTRICT_VALUE_ROWS_ERROR)
-        {
-            return;
-        }
-        /*
-            If we are here, we have tried writing a key that already exists.
-            This would not be a problem if this key did not have references
-            to value rows. Hence we first need to delete all of those - this
-            is best done via a cascade delete. We do a delete & insert in
-            a single transaction (plus writing the value rows).
-        */
-        trans = ndb->startTransaction(tab,
-                                      (const char*)&key_row.redis_key_id,
-                                      key_len + 10);
-        if (trans == nullptr)
-        {
-            assign_ndb_err_to_response(response, FAILED_CREATE_TXN_OBJECT, ndb->getNdbError());
-            return;
-        }
-        /**
-         * We don't know the exact number of value rows, but we know that it is
-         * at least one.
-         */
-        prev_num_rows = 1;
-        ret_code = create_key_row(response,
-                                  tab,
-                                  trans,
-                                  redis_key_id,
-                                  rondb_key,
-                                  key_str,
-                                  key_len,
-                                  value_str,
-                                  value_len,
-                                  num_value_rows,
-                                  prev_num_rows,
-                                  Uint32(0));
-        if (ret_code != 0) {
-            ndb->closeTransaction(trans);
-            return;
-        }
-    } else if (num_value_rows == 0) {
-        ndb->closeTransaction(trans);
-        response->append("+OK\r\n");
-        return;
-    }
-    const NdbDictionary::Table *value_tab = dict->getTable(VALUE_TABLE_NAME);
-    if (value_tab == nullptr)
-    {
-        ndb->closeTransaction(trans);
-        assign_ndb_err_to_response(response,
-                                   FAILED_CREATE_TABLE_OBJECT,
-                                   ndb->getNdbError());
-        return;
-    }
-    /**
-     * Coming here means that we either have to add new value rows or we have
-     * to delete previous value rows or both. Thus the transaction is still
-     * open. We start by creating the new value rows. Next we delete the
-     * remaining value rows from the previous instantiation of the row.
-     */
-    if (num_value_rows > 0) {
-        ret_code = create_all_value_rows(response,
-                                         ndb,
-                                         value_tab,
-                                         trans,
-                                         rondb_key,
-                                         value_str,
-                                         value_len,
-                                         num_value_rows,
-                                         &varsize_param[0]);
-    }
-    if (ret_code != 0) {
-        ndb->closeTransaction(trans);
-        return;
-    }
-    ret_code = delete_value_rows(response,
-                                 value_tab,
-                                 trans,
-                                 rondb_key,
-                                 num_value_rows,
-                                 prev_num_rows);
-    if (ret_code != 0) {
-        ndb->closeTransaction(trans);
-        return;
-    }
-    if (trans->execute(NdbTransaction::Commit,
-                       NdbOperation::AbortOnError) == 0 &&
-        trans->getNdbError().code != 0)
-    {
-        ndb->closeTransaction(trans);
-        assign_ndb_err_to_response(response,
-                                   FAILED_EXEC_TXN,
-                                   trans->getNdbError());
-        return;
-    }
-    ndb->closeTransaction(trans);
-    response->append("+OK\r\n");
-    return;
-}
-
-static
 void rondb_mset(Ndb *ndb,
                const pink::RedisCmdArgsType &argv,
                std::string *response,
@@ -1167,7 +919,8 @@ void rondb_mset(Ndb *ndb,
         key_storage[i].m_num_rw_rows = 0;
         key_storage[i].m_num_current_rw_rows = 0;
         key_storage[i].m_rondb_key = 0;
-        key_storage[i].m_rec_attr = nullptr;
+        key_storage[i].m_rec_attr_prev_num_rows = nullptr;
+        key_storage[i].m_rec_attr_rondb_key = nullptr;
         key_storage[i].m_key_state = KeyState::NotCompleted;
     }
     if (!setup_metadata(ndb,
@@ -1286,7 +1039,7 @@ void rondb_get_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
-  return rondb_get(ndb, argv, response, STRING_REDIS_KEY_ID);
+  return rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_mget_command(Ndb *ndb,
@@ -1300,7 +1053,7 @@ void rondb_set_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
-  return rondb_set(ndb, argv, response, STRING_REDIS_KEY_ID);
+  return rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_mset_command(Ndb *ndb,
@@ -1330,7 +1083,7 @@ void rondb_hget_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_get(ndb, argv, response, redis_key_id);
+  return rondb_mget(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hmget_command(Ndb *ndb,

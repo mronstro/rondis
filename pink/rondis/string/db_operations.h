@@ -36,7 +36,8 @@ int write_data_to_key_op(std::string *response,
                          Uint32 num_value_rows,
                          bool commit_flag,
                          Uint32 row_state,
-                         NdbRecAttr **recAttr);
+                         NdbRecAttr**,
+                         NdbRecAttr**);
 
 int delete_key_row(std::string *response,
                    Ndb *ndb,

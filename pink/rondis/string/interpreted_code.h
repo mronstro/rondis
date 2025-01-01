@@ -21,7 +21,8 @@
 #define MEMORY_OFFSET_STRING 6
 #define NUM_LEN_BYTES 2
 #define INCREMENT_VALUE 1
-#define OUTPUT_INDEX 0
+#define OUTPUT_INDEX_0 0
+#define OUTPUT_INDEX_1 1
 #define RONDB_KEY_NOT_NULL_ERROR 6000
 
 #define INITIAL_INT_VALUE 1
@@ -43,5 +44,6 @@ int write_key_row_commit(std::string *response,
                          const NdbDictionary::Table *tab);
 int write_key_row_no_commit(std::string *response,
                             NdbInterpretedCode &code,
-                            const NdbDictionary::Table *tab);
+                            const NdbDictionary::Table *tab,
+                            Uint64 rondb_key);
 #endif

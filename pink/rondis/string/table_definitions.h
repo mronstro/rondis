@@ -138,7 +138,8 @@ struct GetControl;
 struct KeyStorage {
     struct GetControl *m_get_ctrl;
     NdbTransaction *m_trans;
-    NdbRecAttr *m_rec_attr;
+    NdbRecAttr *m_rec_attr_prev_num_rows;
+    NdbRecAttr *m_rec_attr_rondb_key;
     char *m_value_ptr;
     const char *m_key_str;
     Uint64 m_rondb_key;
