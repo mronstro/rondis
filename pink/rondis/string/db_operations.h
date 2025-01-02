@@ -152,11 +152,13 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
                         Ndb *ndb,
                         std::string *response);
 
-void incr_key_row(std::string *response,
-                  Ndb *ndb,
-                  const NdbDictionary::Table *tab,
-                  NdbTransaction *trans,
-                  struct key_table *key_row);
+void incr_decr_key_row(std::string *response,
+                       Ndb *ndb,
+                       const NdbDictionary::Table *tab,
+                       NdbTransaction *trans,
+                       struct key_table *key_row,
+                       bool incr_flag,
+                       Uint64 inc_dec_value);
 
 int rondb_get_redis_key_id(Ndb *ndb,
                            Uint64 &redis_key_id,

@@ -275,11 +275,37 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
                 assign_generic_err_to_response(response, error_message);
             }
         }
+        else if (strcasecmp(command, "DECR") == 0)
+        {
+            if (argv.size() == 2)
+            {
+                rondb_decr_command(ndb, argv, response);
+            }
+            else
+            {
+                char error_message[256];
+                snprintf(error_message, sizeof(error_message), REDIS_WRONG_NUMBER_OF_ARGS, argv[0].c_str());
+                assign_generic_err_to_response(response, error_message);
+            }
+        }
         else if (strcasecmp(command, "HINCR") == 0)
         {
             if (argv.size() == 3)
             {
                 rondb_hincr_command(ndb, argv, response);
+            }
+            else
+            {
+                char error_message[256];
+                snprintf(error_message, sizeof(error_message), REDIS_WRONG_NUMBER_OF_ARGS, argv[0].c_str());
+                assign_generic_err_to_response(response, error_message);
+            }
+        }
+        else if (strcasecmp(command, "HDECR") == 0)
+        {
+            if (argv.size() == 3)
+            {
+                rondb_hdecr_command(ndb, argv, response);
             }
             else
             {

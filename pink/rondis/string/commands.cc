@@ -1004,11 +1004,13 @@ void rondb_mset(Ndb *ndb,
 }
 
 static
-void rondb_incr(
+void rondb_incr_decr(
     Ndb *ndb,
     const pink::RedisCmdArgsType &argv,
     std::string *response,
-    Uint64 redis_key_id)
+    Uint64 redis_key_id,
+    bool incr_flag,
+    Int64 inc_dec_value)
 {
     Uint32 arg_index_start = (redis_key_id == STRING_REDIS_KEY_ID) ? 1 : 2;
     const NdbDictionary::Dictionary *dict;
@@ -1028,11 +1030,21 @@ void rondb_incr(
                            &trans))
       return;
 
-    incr_key_row(response,
-                 ndb,
-                 tab,
-                 trans,
-                 &key_row);
+    Uint64 unsigned_value = Uint64(inc_dec_value);
+    if (inc_dec_value < 0) {
+        unsigned_value = Uint64(-inc_dec_value);
+        if (incr_flag)
+            incr_flag = false;
+        else
+            incr_flag = true;
+    }
+    incr_decr_key_row(response,
+                      ndb,
+                      tab,
+                      trans,
+                      &key_row,
+                      incr_flag,
+                      unsigned_value);
     ndb->closeTransaction(trans);
     return;
 }
@@ -1069,7 +1081,24 @@ void rondb_incr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
-  return rondb_incr(ndb, argv, response, STRING_REDIS_KEY_ID);
+  return rondb_incr_decr(ndb,
+                         argv,
+                         response,
+                         STRING_REDIS_KEY_ID,
+                         true,
+                         1);
+}
+
+void rondb_decr_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response)
+{
+  return rondb_incr_decr(ndb,
+                         argv,
+                         response,
+                         STRING_REDIS_KEY_ID,
+                         false,
+                         1);
 }
 
 void rondb_hget_command(Ndb *ndb,
@@ -1133,5 +1162,31 @@ void rondb_hincr_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_incr(ndb, argv, response, redis_key_id);
+  return rondb_incr_decr(ndb,
+                         argv,
+                         response,
+                         redis_key_id,
+                         true,
+                         1);
+}
+
+void rondb_hdecr_command(Ndb *ndb,
+                         const pink::RedisCmdArgsType &argv,
+                         std::string *response)
+{
+  Uint64 redis_key_id;
+  int ret_code = rondb_get_redis_key_id(ndb,
+                                       redis_key_id,
+                                       argv[1].c_str(),
+                                       argv[1].size(),
+                                       response);
+  if (ret_code != 0) {
+      return;
+  }
+  return rondb_incr_decr(ndb,
+                         argv,
+                         response,
+                         redis_key_id,
+                         false,
+                         1);
 }

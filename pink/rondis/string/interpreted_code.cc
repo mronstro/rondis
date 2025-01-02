@@ -7,18 +7,23 @@
 #include "table_definitions.h"
 
 // Define the interpreted program for the INCR operation
-int initNdbCodeIncr(std::string *response,
-                    NdbInterpretedCode *code,
-                    const NdbDictionary::Table *tab)
+int initNdbCodeIncrDecr(std::string *response,
+                        NdbInterpretedCode *code,
+                        const NdbDictionary::Table *tab,
+                        bool incr_flag,
+                        Uint64 inc_dec_value)
 {
-    const NdbDictionary::Column *value_start_col = tab->getColumn(KEY_TABLE_COL_value_start);
-    const NdbDictionary::Column *tot_value_len_col = tab->getColumn(KEY_TABLE_COL_tot_value_len);
-    const NdbDictionary::Column *rondb_key_col = tab->getColumn(KEY_TABLE_COL_rondb_key);
+    const NdbDictionary::Column *value_start_col =
+          tab->getColumn(KEY_TABLE_COL_value_start);
+    const NdbDictionary::Column *tot_value_len_col =
+          tab->getColumn(KEY_TABLE_COL_tot_value_len);
+    const NdbDictionary::Column *rondb_key_col =
+          tab->getColumn(KEY_TABLE_COL_rondb_key);
 
     code->load_const_u16(REG0, MEMORY_OFFSET_LEN_BYTES);
     code->load_const_u16(REG6, MEMORY_OFFSET_START);
     code->load_op_type(REG1);                          // Read operation type into register 1
-    code->branch_eq_const(REG1, RONDB_INSERT, LABEL1); // Inserts go to label 1
+    code->branch_eq_const(REG1, RONDB_INSERT, LABEL2); // Inserts go to label 1
 
     /**
      * The first 4 bytes of the memory must be kept for the Attribute header
@@ -40,7 +45,16 @@ int initNdbCodeIncr(std::string *response,
     code->load_const_u16(REG1, MEMORY_OFFSET_STRING);
     code->sub_const_reg(REG3, REG2, NUM_LEN_BYTES);
     code->str_to_int64(REG4, REG1, REG3); // Convert string to number
-    code->add_const_reg(REG5, REG4, INCREMENT_VALUE);
+
+    code->def_label(LABEL1);
+    code->load_const_u64(REG5, inc_dec_value);
+    if (incr_flag) {
+        code->add_reg(REG5, REG4, REG5);
+    }
+    else
+    {
+        code->sub_reg(REG5, REG4, REG5);
+    }
     code->int64_to_str(REG3, REG1, REG5);           // Convert number to string
     code->add_const_reg(REG2, REG3, NUM_LEN_BYTES); // New value_start length
     code->write_size_mem(REG3, REG0);               // Write back length bytes in memory
@@ -51,25 +65,9 @@ int initNdbCodeIncr(std::string *response,
     code->interpret_exit_ok();
 
     /* INSERT code */
-    code->def_label(LABEL1);
-    code->load_const_u16(REG5, INITIAL_INT_VALUE);
-    code->load_const_u16(REG3, INITIAL_INT_STRING_LEN);
-    code->write_interpreter_output(REG5, OUTPUT_INDEX_0); // Write into output index 0
-
-    Uint32 insert_value;
-    Uint8 *insert_value_ptr = (Uint8 *)&insert_value;
-    insert_value_ptr[0] = 1;                  // Length is 1
-    insert_value_ptr[1] = 0;                  // Second length byte is 0
-    insert_value_ptr[2] = INITIAL_INT_STRING; // Inserts a string '1'
-    insert_value_ptr[3] = 0;
-
-    code->load_const_mem(REG0,
-                         REG2,
-                         INITIAL_INT_STRING_LEN_WITH_LEN_BYTES,
-                         &insert_value);
-    code->write_from_mem(value_start_col, REG6, REG2); // Write to column
-    code->write_attr(tot_value_len_col, REG3);
-    code->interpret_exit_ok();
+    code->def_label(LABEL2);
+    code->load_const_u16(REG4, 0);
+    code->branch_label(LABEL1);
 
     // Program end, now compile code
     int ret_code = code->finalise();

@@ -32,9 +32,11 @@
 #define INITIAL_INT_STRING_LEN 1
 #define INITIAL_INT_STRING_LEN_WITH_LEN_BYTES 3
 
-int initNdbCodeIncr(std::string *response,
-                    NdbInterpretedCode *code,
-                    const NdbDictionary::Table *tab);
+int initNdbCodeIncrDecr(std::string *response,
+                        NdbInterpretedCode *code,
+                        const NdbDictionary::Table *tab,
+                        bool incr_flag,
+                        Uint64 inc_dec_value);
 
 int write_hset_key_table(Ndb *ndb,
                          const NdbDictionary::Table *tab,

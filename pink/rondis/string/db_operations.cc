@@ -727,11 +727,13 @@ int rondb_get_rondb_key(const NdbDictionary::Table *tab,
     return 0;
 }
 
-void incr_key_row(std::string *response,
-                  Ndb *ndb,
-                  const NdbDictionary::Table *tab,
-                  NdbTransaction *trans,
-                  struct key_table *key_row) {
+void incr_decr_key_row(std::string *response,
+                       Ndb *ndb,
+                       const NdbDictionary::Table *tab,
+                       NdbTransaction *trans,
+                       struct key_table *key_row,
+                       bool incr_flag,
+                       Uint64 inc_dec_value) {
     /**
      * The mask specifies which columns is to be updated after the interpreter
      * has finished. The values are set in the key_row.
@@ -753,7 +755,11 @@ void incr_key_row(std::string *response,
 
     Uint32 code_buffer[128];
     NdbInterpretedCode code(tab, &code_buffer[0], sizeof(code_buffer));
-    if (initNdbCodeIncr(response, &code, tab) != 0)
+    if (initNdbCodeIncrDecr(response,
+                            &code,
+                            tab,
+                            incr_flag,
+                            inc_dec_value) != 0)
         return;
 
     // Prepare the interpreted program to be part of the write
