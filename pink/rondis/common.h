@@ -34,6 +34,7 @@ Uint32 get_length(char* buf);
 #define FAILED_EXECUTE_MGET "Failed to execute MGET operation"
 #define FAILED_EXECUTE_MSET "Failed to execute MSET operation"
 #define FAILED_MALLOC "Failed to allocate memory for operation"
+#define FAILED_INCRBY_DECRBY_PARAMETER "Wrong parameter, should be Int64"
 
 // Redis errors
 #define REDIS_UNKNOWN_COMMAND "unknown command '%s'"

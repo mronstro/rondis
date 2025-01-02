@@ -113,6 +113,7 @@ echo "Testing edge case large key length (Redis allows up to 512MB for the value
 edge_value=$(head -c 100000 < /dev/zero | tr '\0' 'b')
 set_and_get "$KEY:edge_large" "$edge_value"
 
+echo
 incr_key="$KEY:incr${RANDOM}${RANDOM}"
 incr_output=$(redis-cli INCR "$incr_key")
 incr_result=$(redis-cli GET "$incr_key")
@@ -126,6 +127,7 @@ else
     exit 1
 fi
 
+echo
 incr_start_value=$RANDOM
 set_and_get "$incr_key" $incr_start_value
 for i in {1..10}; do
@@ -142,7 +144,52 @@ for i in {1..10}; do
     fi
 done
 
+echo
+incrby_key="$KEY:incrby${RANDOM}${RANDOM}"
+incrby_output=$(redis-cli INCRBY "$incrby_key" "20")
+incrby_result=$(redis-cli GET "$incrby_key")
+if [[ "$incrby_result" == "20" ]]; then
+    echo "PASS: Incrementing non-existing key $incrby_key by 20"
+else
+    echo "FAIL: Incrementing non-existing key $incrby_key by 20"
+    echo "Expected: 20"
+    echo "Received: $incrby_result"
+    echo "incr_output: $incrby_output"
+    exit 1
+fi
+
+echo
+incrby_start_value=$RANDOM
+set_and_get "$incrby_key" $incrby_start_value
+for i in {1..10}; do
+    incrby_output=$(redis-cli INCRBY "$incrby_key" "10")
+    incrby_result=$(redis-cli GET "$incrby_key")
+    incrby_expected_value=$((incrby_start_value + (i * 10)))
+    if [[ "$incrby_result" == $incrby_expected_value ]]; then
+        echo "PASS: Incrementing key $incrby_key by 10 to value $incrby_result"
+    else
+        echo "FAIL: Decrementing key $incrby_key by 10 from value $incrby_start_value"
+        echo "Expected: $incrby_expected_value"
+        echo "Received: $incrby_result"
+        exit 1
+    fi
+done
+
+echo
 decr_key="$KEY:decr${RANDOM}${RANDOM}"
+decr_output=$(redis-cli DECR "$decr_key")
+decr_result=$(redis-cli GET "$decr_key")
+if [[ "$decr_result" == -1 ]]; then
+    echo "PASS: Decrementing non-existing key $decr_key "
+else
+    echo "FAIL: Decrementing non-existing key $decr_key"
+    echo "Expected: -1"
+    echo "Received: $decr_result"
+    echo "incr_output: $decr_output"
+    exit 1
+fi
+
+echo
 decr_start_value=$RANDOM
 set_and_get "$decr_key" $decr_start_value
 for i in {1..10}; do
@@ -159,6 +206,38 @@ for i in {1..10}; do
     fi
 done
 
+echo
+decrby_key="$KEY:decr${RANDOM}${RANDOM}"
+decrby_output=$(redis-cli DECRBY "$decrby_key" "20")
+decrby_result=$(redis-cli GET "$decrby_key")
+if [[ "$decrby_result" == "-20" ]]; then
+    echo "PASS: Decrementing non-existing key $decrby_key by 20"
+else
+    echo "FAIL: Decrementing non-existing key $decrby_key by 20"
+    echo "Expected: -20"
+    echo "Received: $decrby_result"
+    echo "incr_output: $decrby_output"
+    exit 1
+fi
+
+echo
+decrby_start_value=$RANDOM
+set_and_get "$decrby_key" $decrby_start_value
+for i in {1..10}; do
+    decrby_output=$(redis-cli DECRBY "$decrby_key" "10")
+    decrby_result=$(redis-cli GET "$decrby_key")
+    decrby_expected_value=$((decrby_start_value - (i * 10)))
+    if [[ "$decrby_result" == $decrby_expected_value ]]; then
+        echo "PASS: Decrementing key $decrby_key by 10 to value $decrby_result"
+    else
+        echo "FAIL: Decrementing key $decrby_key by 10 from value $decrby_start_value"
+        echo "Expected: $decrby_expected_value"
+        echo "Received: $decrby_result"
+        exit 1
+    fi
+done
+
+echo
 # Create multi-value rows in parallel
 run_client() {
     local client="$1"

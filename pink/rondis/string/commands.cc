@@ -1062,52 +1062,100 @@ void rondb_get_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
-  return rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
+  rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_mget_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
-  return rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
+  rondb_mget(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_set_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
-  return rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
+  rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_mset_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
-  return rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
+  rondb_mset(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
 void rondb_incr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
-  return rondb_incr_decr(ndb,
-                         argv,
-                         response,
-                         STRING_REDIS_KEY_ID,
-                         true,
-                         1);
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  STRING_REDIS_KEY_ID,
+                  true,
+                  1);
+}
+
+void rondb_incrby_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response)
+{
+  char *end_ptr = nullptr;
+  const char *val_ptr = argv[2].c_str();
+  const char *memory_end = val_ptr + argv[2].size();
+  Int64 val = strtoll(val_ptr,
+                      &end_ptr,
+                      10);
+  if (errno == ERANGE || end_ptr != memory_end) {
+    assign_err_to_response(response,
+                           FAILED_INCRBY_DECRBY_PARAMETER,
+                           1);
+    return;
+  }
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  STRING_REDIS_KEY_ID,
+                  true,
+                  val);
 }
 
 void rondb_decr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
-  return rondb_incr_decr(ndb,
-                         argv,
-                         response,
-                         STRING_REDIS_KEY_ID,
-                         false,
-                         1);
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  STRING_REDIS_KEY_ID,
+                  false,
+                  1);
+}
+
+void rondb_decrby_command(Ndb *ndb,
+                          const pink::RedisCmdArgsType &argv,
+                          std::string *response)
+{
+  char *end_ptr = nullptr;
+  const char *val_ptr = argv[2].c_str();
+  const char *memory_end = val_ptr + argv[2].size();
+  Int64 val = strtoll(val_ptr,
+                      &end_ptr,
+                      10);
+  if (errno == ERANGE || end_ptr != memory_end) {
+    assign_err_to_response(response,
+                           FAILED_INCRBY_DECRBY_PARAMETER,
+                           1);
+    return;
+  }
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  STRING_REDIS_KEY_ID,
+                  false,
+                  val);
 }
 
 void rondb_hget_command(Ndb *ndb,
@@ -1123,7 +1171,7 @@ void rondb_hget_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_mget(ndb, argv, response, redis_key_id);
+  rondb_mget(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hmget_command(Ndb *ndb,
@@ -1139,7 +1187,7 @@ void rondb_hmget_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_mget(ndb, argv, response, redis_key_id);
+  rondb_mget(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hset_command(Ndb *ndb,
@@ -1155,7 +1203,7 @@ void rondb_hset_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_mset(ndb, argv, response, redis_key_id);
+  rondb_mset(ndb, argv, response, redis_key_id);
 }
 
 void rondb_hincr_command(Ndb *ndb,
@@ -1171,12 +1219,45 @@ void rondb_hincr_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_incr_decr(ndb,
-                         argv,
-                         response,
-                         redis_key_id,
-                         true,
-                         1);
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  redis_key_id,
+                  true,
+                  1);
+}
+
+void rondb_hincrby_command(Ndb *ndb,
+                           const pink::RedisCmdArgsType &argv,
+                           std::string *response)
+{
+  Uint64 redis_key_id;
+  int ret_code = rondb_get_redis_key_id(ndb,
+                                       redis_key_id,
+                                       argv[1].c_str(),
+                                       argv[1].size(),
+                                       response);
+  if (ret_code != 0) {
+      return;
+  }
+  char *end_ptr = nullptr;
+  const char *val_ptr = argv[3].c_str();
+  const char *memory_end = val_ptr + argv[3].size();
+  Int64 val = strtoll(val_ptr,
+                      &end_ptr,
+                      10);
+  if (errno == ERANGE || end_ptr != memory_end) {
+    assign_err_to_response(response,
+                           FAILED_INCRBY_DECRBY_PARAMETER,
+                           1);
+    return;
+  }
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  redis_key_id,
+                  true,
+                  val);
 }
 
 void rondb_hdecr_command(Ndb *ndb,
@@ -1192,10 +1273,43 @@ void rondb_hdecr_command(Ndb *ndb,
   if (ret_code != 0) {
       return;
   }
-  return rondb_incr_decr(ndb,
-                         argv,
-                         response,
-                         redis_key_id,
-                         false,
-                         1);
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  redis_key_id,
+                  false,
+                  1);
+}
+
+void rondb_hdecrby_command(Ndb *ndb,
+                         const pink::RedisCmdArgsType &argv,
+                         std::string *response)
+{
+  Uint64 redis_key_id;
+  int ret_code = rondb_get_redis_key_id(ndb,
+                                       redis_key_id,
+                                       argv[1].c_str(),
+                                       argv[1].size(),
+                                       response);
+  if (ret_code != 0) {
+      return;
+  }
+  char *end_ptr = nullptr;
+  const char *val_ptr = argv[3].c_str();
+  const char *memory_end = val_ptr + argv[3].size();
+  Int64 val = strtoll(val_ptr,
+                      &end_ptr,
+                      10);
+  if (errno == ERANGE || end_ptr != memory_end) {
+    assign_err_to_response(response,
+                           FAILED_INCRBY_DECRBY_PARAMETER,
+                           1);
+    return;
+  }
+  rondb_incr_decr(ndb,
+                  argv,
+                  response,
+                  redis_key_id,
+                  false,
+                  val);
 }
