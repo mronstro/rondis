@@ -11,10 +11,17 @@
 #include "table_definitions.h"
 #include "interpreted_code.h"
 
-#define DEBUG_KS
-#define DEBUG_CTRL
-#define DEBUG_HSET_KEY
-#define DEBUG_MSET
+#define DEBUG_KS 1
+#define DEBUG_CTRL 1
+#define DEBUG_HSET_KEY 1
+#define DEBUG_MSET 1
+#define DEBUG_INCR 1
+
+#ifdef DEBUG_INCR
+#define DEB_INCR(arglist) do { printf arglist ; } while (0)
+#else
+#define DEB_INCR(arglist)
+#endif
 
 #ifdef DEBUG_KS
 #define DEB_KS(arglist) do { printf arglist ; } while (0)
@@ -810,11 +817,13 @@ void incr_decr_key_row(std::string *response,
     {
         if (trans->getNdbError().code == RONDB_KEY_NOT_NULL_ERROR)
         {
+            DEB_INCR(("RONDB_KEY_NOT_NULL_ERROR\n"));
             assign_ndb_err_to_response(response,
                                        FAILED_INCR_KEY_MULTI_ROW,
                                        trans->getNdbError());
             return;
         }
+        DEB_INCR(("INCR_DECR_ERROR: %d\n", trans->getNdbError().code));
         assign_ndb_err_to_response(response,
                                    FAILED_INCR_KEY,
                                    trans->getNdbError());
@@ -825,6 +834,7 @@ void incr_decr_key_row(std::string *response,
     NdbRecAttr *recAttr = getvals[0].recAttr;
     Int64 new_incremented_value = recAttr->int64_value();
 
+    DEB_INCR(("INCR/DECR success, new value: %lld\n", new_incremented_value));
     /* Send the return message to Redis client */
     char header_buf[20];
     int header_len = snprintf(header_buf,

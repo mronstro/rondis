@@ -67,6 +67,7 @@ int initNdbCodeIncrDecr(std::string *response,
     /* INSERT code */
     code->def_label(LABEL2);
     code->load_const_u16(REG4, 0);
+    code->load_const_u16(REG1, MEMORY_OFFSET_STRING);
     code->branch_label(LABEL1);
 
     // Program end, now compile code

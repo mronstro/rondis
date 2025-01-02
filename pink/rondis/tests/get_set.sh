@@ -122,6 +122,7 @@ else
     echo "FAIL: Incrementing non-existing key $incr_key"
     echo "Expected: 1"
     echo "Received: $incr_result"
+    echo "incr_output: $incr_output"
     exit 1
 fi
 
@@ -137,6 +138,23 @@ for i in {1..10}; do
         echo "FAIL: Incrementing key $incr_key from value $incr_start_value"
         echo "Expected: $incr_expected_value"
         echo "Received: $incr_result"
+        exit 1
+    fi
+done
+
+decr_key="$KEY:decr${RANDOM}${RANDOM}"
+decr_start_value=$RANDOM
+set_and_get "$decr_key" $decr_start_value
+for i in {1..10}; do
+    decr_output=$(redis-cli DECR "$decr_key")
+    decr_result=$(redis-cli GET "$decr_key")
+    decr_expected_value=$((decr_start_value - i))
+    if [[ "$decr_result" == $decr_expected_value ]]; then
+        echo "PASS: Decrementing key $decr_key to value $decr_result"
+    else
+        echo "FAIL: Decrementing key $decr_key from value $decr_start_value"
+        echo "Expected: $decr_expected_value"
+        echo "Received: $decr_result"
         exit 1
     fi
 done

@@ -14,6 +14,13 @@
 #define DEBUG_MGET_CMD 1
 #define DEBUG_MSET_CMD 1
 #define DEBUG_HSET_KEY 1
+#define DEBUG_INCR 1
+
+#ifdef DEBUG_INCR
+#define DEB_INCR(arglist) do { printf arglist ; } while (0)
+#else
+#define DEB_INCR(arglist)
+#endif
 
 #ifdef DEBUG_MGET_CMD
 #define DEB_MGET_CMD(arglist) do { printf arglist ; } while (0)
@@ -1038,6 +1045,8 @@ void rondb_incr_decr(
         else
             incr_flag = true;
     }
+    DEB_INCR(("INCR redis_key_id: %llu, incr_flag: %u, val: %llu\n",
+        redis_key_id, incr_flag, unsigned_value));
     incr_decr_key_row(response,
                       ndb,
                       tab,
