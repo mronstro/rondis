@@ -143,4 +143,32 @@ for i in {1..10}; do
     fi
 done
 
+decr_field="$KEY:decr${RANDOM}${RANDOM}"
+decr_output=$(redis-cli HDECR "$HASH_KEY" "$decr_field")
+decr_result=$(redis-cli HGET "$HASH_KEY" "$decr_field")
+if [[ "$decr_result" == -1 ]]; then
+    echo "PASS: Incrementing non-existing key $decr_field "
+else
+    echo "FAIL: Incrementing non-existing key $decr_field"
+    echo "Expected: -1"
+    echo "Received: $decr_result"
+    exit 1
+fi
+
+decr_start_value=$RANDOM
+hset_and_hget "$decr_field" $decr_start_value
+for i in {1..10}; do
+    decr_output=$(redis-cli HDECR "$HASH_KEY" "$decr_field")
+    decr_result=$(redis-cli HGET "$HASH_KEY" "$decr_field")
+    decr_expected_value=$((decr_start_value - i))
+    if [[ "$decr_result" == $decr_expected_value ]]; then
+        echo "PASS: Incrementing field $decr_field to value $decr_result"
+    else
+        echo "FAIL: Incrementing field $decr_field from value $decr_start_value"
+        echo "Expected: $decr_expected_value"
+        echo "Received: $decr_result"
+        exit 1
+    fi
+done
+
 echo "All tests completed."
