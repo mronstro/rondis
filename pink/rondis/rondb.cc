@@ -344,7 +344,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
         {
             if (argv.size() == 3)
             {
-                rondb_hdecrby_command(ndb, argv, response);
+                rondb_hdecr_command(ndb, argv, response);
             }
             else
             {
@@ -357,7 +357,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
         {
             if (argv.size() == 4)
             {
-                rondb_hdecr_command(ndb, argv, response);
+                rondb_hdecrby_command(ndb, argv, response);
             }
             else
             {

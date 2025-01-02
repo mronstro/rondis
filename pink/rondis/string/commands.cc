@@ -1090,6 +1090,7 @@ void rondb_incr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
+  DEB_INCR(("INCR command"));
   rondb_incr_decr(ndb,
                   argv,
                   response,
@@ -1102,6 +1103,7 @@ void rondb_incrby_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
+  DEB_INCR(("INCRBY command"));
   char *end_ptr = nullptr;
   const char *val_ptr = argv[2].c_str();
   const char *memory_end = val_ptr + argv[2].size();
@@ -1126,6 +1128,7 @@ void rondb_decr_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
+  DEB_INCR(("DECR command"));
   rondb_incr_decr(ndb,
                   argv,
                   response,
@@ -1138,6 +1141,7 @@ void rondb_decrby_command(Ndb *ndb,
                           const pink::RedisCmdArgsType &argv,
                           std::string *response)
 {
+  DEB_INCR(("DECRBY command"));
   char *end_ptr = nullptr;
   const char *val_ptr = argv[2].c_str();
   const char *memory_end = val_ptr + argv[2].size();
@@ -1210,6 +1214,7 @@ void rondb_hincr_command(Ndb *ndb,
                          const pink::RedisCmdArgsType &argv,
                          std::string *response)
 {
+  DEB_INCR(("HINCR command"));
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
                                        redis_key_id,
@@ -1231,6 +1236,7 @@ void rondb_hincrby_command(Ndb *ndb,
                            const pink::RedisCmdArgsType &argv,
                            std::string *response)
 {
+  DEB_INCR(("HINCRBY command"));
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
                                        redis_key_id,
@@ -1264,6 +1270,7 @@ void rondb_hdecr_command(Ndb *ndb,
                          const pink::RedisCmdArgsType &argv,
                          std::string *response)
 {
+  DEB_INCR(("HDECR command"));
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
                                        redis_key_id,
@@ -1285,6 +1292,7 @@ void rondb_hdecrby_command(Ndb *ndb,
                          const pink::RedisCmdArgsType &argv,
                          std::string *response)
 {
+  DEB_INCR(("HDECRBY command"));
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
                                        redis_key_id,

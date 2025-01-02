@@ -51,7 +51,7 @@ function hset_and_hget() {
         echo "Received hash:    $actual_hash"
         exit 1
     fi
-    echo
+    echo ""
 }
 
 generate_random_chars() {
@@ -115,18 +115,20 @@ echo "Testing edge case large key length (Redis allows up to 512MB for the value
 edge_value=$(head -c 100000 < /dev/zero | tr '\0' 'b')
 hset_and_hget "$KEY:edge_large" "$edge_value"
 
+echo ""
 incr_field="$KEY:incr${RANDOM}${RANDOM}"
 incr_output=$(redis-cli HINCR "$HASH_KEY" "$incr_field")
 incr_result=$(redis-cli HGET "$HASH_KEY" "$incr_field")
 if [[ "$incr_result" == 1 ]]; then
-    echo "PASS: Incrementing non-existing key $incr_field "
+    echo "PASS: Incrementing non-existing field $incr_field "
 else
-    echo "FAIL: Incrementing non-existing key $incr_field"
+    echo "FAIL: Incrementing non-existing field $incr_field"
     echo "Expected: 1"
     echo "Received: $incr_result"
     exit 1
 fi
 
+echo ""
 incr_start_value=$RANDOM
 hset_and_hget "$incr_field" $incr_start_value
 for i in {1..10}; do
@@ -143,18 +145,51 @@ for i in {1..10}; do
     fi
 done
 
+echo ""
+incrby_field="$KEY:incrby${RANDOM}${RANDOM}"
+incrby_output=$(redis-cli HINCRBY "$HASH_KEY" "$incrby_field" "20")
+incrby_result=$(redis-cli HGET "$HASH_KEY" "$incrby_field")
+if [[ "$incrby_result" == "20" ]]; then
+    echo "PASS: Incrementing non-existing field $incrby_field by 20"
+else
+    echo "FAIL: Incrementing non-existing field $incrby_field by 20"
+    echo "Expected: 20"
+    echo "Received: $incrby_result"
+    echo "incr_output: $incrby_output"
+    exit 1
+fi
+
+echo ""
+incrby_start_value=$RANDOM
+hset_and_hget "$incrby_field" $incrby_start_value
+for i in {1..10}; do
+    incrby_output=$(redis-cli HINCRBY "$HASH_KEY" "$incrby_field" "10")
+    incrby_result=$(redis-cli HGET "$HASH_KEY" "$incrby_field")
+    incrby_expected_value=$((incrby_start_value + (i * 10)))
+    if [[ "$incrby_result" == $incrby_expected_value ]]; then
+        echo "PASS: Incrementing field $incrby_field by 10 to value $incrby_result"
+    else
+        echo "FAIL: Incrementing field $incrby_field by 10 from value $incrby_start_value"
+        echo "Expected: $incrby_expected_value"
+        echo "Received: $incrby_result"
+        exit 1
+    fi
+done
+
+echo ""
 decr_field="$KEY:decr${RANDOM}${RANDOM}"
 decr_output=$(redis-cli HDECR "$HASH_KEY" "$decr_field")
 decr_result=$(redis-cli HGET "$HASH_KEY" "$decr_field")
-if [[ "$decr_result" == -1 ]]; then
-    echo "PASS: Incrementing non-existing key $decr_field "
+if [[ "$decr_result" == "-1" ]]; then
+    echo "PASS: Decrementing non-existing field $decr_field to value -1"
 else
-    echo "FAIL: Incrementing non-existing key $decr_field"
+    echo "FAIL: Decrementing non-existing field $decr_field"
     echo "Expected: -1"
     echo "Received: $decr_result"
     exit 1
 fi
 
+echo ""
 decr_start_value=$RANDOM
 hset_and_hget "$decr_field" $decr_start_value
 for i in {1..10}; do
@@ -162,11 +197,42 @@ for i in {1..10}; do
     decr_result=$(redis-cli HGET "$HASH_KEY" "$decr_field")
     decr_expected_value=$((decr_start_value - i))
     if [[ "$decr_result" == $decr_expected_value ]]; then
-        echo "PASS: Incrementing field $decr_field to value $decr_result"
+        echo "PASS: Decrementing field $decr_field to value $decr_result"
     else
-        echo "FAIL: Incrementing field $decr_field from value $decr_start_value"
+        echo "FAIL: Decrementing field $decr_field from value $decr_start_value"
         echo "Expected: $decr_expected_value"
         echo "Received: $decr_result"
+        exit 1
+    fi
+done
+
+echo ""
+decrby_field="$KEY:decr${RANDOM}${RANDOM}"
+decrby_output=$(redis-cli HDECRBY "$HASH_KEY" "$decrby_field" "20")
+decrby_result=$(redis-cli HGET "$HASH_KEY" "$decrby_field")
+if [[ "$decrby_result" == "-20" ]]; then
+    echo "PASS: Decrementing non-existing field $decrby_field by 20 to -20"
+else
+    echo "FAIL: Decrementing non-existing field $decrby_field by 20"
+    echo "Expected: -20"
+    echo "Received: $decrby_result"
+    echo "incr_output: $decrby_output"
+    exit 1
+fi
+
+echo ""
+decrby_start_value=$RANDOM
+hset_and_hget "$decrby_field" $decrby_start_value
+for i in {1..10}; do
+    decrby_output=$(redis-cli HDECRBY "$HASH_KEY" "$decrby_field" "10")
+    decrby_result=$(redis-cli HGET "$HASH_KEY" "$decrby_field")
+    decrby_expected_value=$((decrby_start_value - (i * 10)))
+    if [[ "$decrby_result" == $decrby_expected_value ]]; then
+        echo "PASS: Decrementing field $decrby_field by 10 to value $decrby_result"
+    else
+        echo "FAIL: Decrementing field $decrby_field by 10 from value $decrby_start_value"
+        echo "Expected: $decrby_expected_value"
+        echo "Received: $decrby_result"
         exit 1
     fi
 done
