@@ -171,10 +171,12 @@ complex_delete_callback(int result, NdbTransaction *trans, void *aObject) {
     key_store->m_trans = nullptr;
   } else {
     Uint32 num_rows = key_store->m_key_row.num_rows;
+    Uint64 rondb_key = key_store->m_key_row.rondb_key;
     if (num_rows == 0) {
       key_store->m_key_state = KeyState::CompletedMultiRow;
     } else {
       key_store->m_num_rows = num_rows;
+      key_store->m_rondb_key = rondb_key;
       key_store->m_key_state = KeyState::MultiRowRWValue;
     }
   }
@@ -198,9 +200,9 @@ int prepare_complex_delete_row(std::string *response,
   const unsigned char *mask_ptr = (const unsigned char *)&mask;
 
   const NdbOperation *del_op = key_storage->m_trans->deleteTuple(
-    pk_value_record,
+    pk_key_record,
     (const char *)key_row,
-    entire_value_record,
+    entire_key_record,
     (char *)key_row,
     mask_ptr);
   if (del_op == nullptr) {
@@ -236,9 +238,9 @@ int prepare_simple_delete_row(std::string *response,
   opts.interpretedCode = &code;
 
   const NdbOperation *del_op = key_storage->m_trans->deleteTuple(
-    pk_value_record,
+    pk_key_record,
     (const char *)key_row,
-    entire_value_record,
+    entire_key_record,
     nullptr,
     nullptr,
     &opts,
@@ -258,11 +260,11 @@ simple_delete_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_store->m_get_ctrl;
   assert(get_ctrl->m_num_transactions > 0);
   assert(trans == key_store->m_trans);
-  assert(key_store->m_key_state == KeyState::MultiRow);
+  assert(key_store->m_key_state == KeyState::NotCompleted);
   (void)result;
   int code = trans->getNdbError().code;
   if (code != 0) {
-    DEB_KS(("Key %u had error: %d\n", key_store->m_index, code));
+    DEB_DEL_CMD(("Key %u had error: %d\n", key_store->m_index, code));
     key_store->m_key_state = KeyState::CompletedFailed;
     if (code == RONDB_KEY_NOT_NULL_ERROR) {
       key_store->m_key_state = KeyState::MultiRow;
@@ -286,7 +288,7 @@ simple_delete_callback(int result, NdbTransaction *trans, void *aObject) {
   get_ctrl->m_num_transactions--;
   get_ctrl->m_num_keys_outstanding--;
   key_store->m_trans = nullptr;
-  DEB_KS(("Key %u Simple Delete, key_state: %u\n",
+  DEB_DEL_CMD(("Key %u Simple Delete, key_state: %u\n",
     key_store->m_index,
     key_store->m_key_state));
 }
@@ -307,8 +309,8 @@ int prepare_delete_value_row(std::string *response,
   struct value_table value_row;
   value_row.ordinal = ordinal;
   value_row.rondb_key = key_store->m_rondb_key;
-  DEB_MSET(("Delete value row with rondb_key: %llu and ordinal: %u\n",
-    key_store->m_rondb_key, ordinal));
+  DEB_MSET(("Key: %u, delete value row with rondb_key: %llu and ordinal: %u\n",
+    key_store->m_index, key_store->m_rondb_key, ordinal));
   const NdbOperation *delete_op = key_store->m_trans->deleteTuple(
     pk_value_record,
     (const char *)&value_row,

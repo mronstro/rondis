@@ -71,8 +71,11 @@ redis-cli ping && echo
 echo "Testing empty string..."
 set_and_get "$KEY:empty" ""
 
+redis-cli DEL "$KEY:empty"
+
 echo "Testing small string..."
 set_and_get "$KEY:small" "hello"
+redis-cli DEL "$KEY:small"
 
 # Minimal amount to create value rows: 30000
 for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
@@ -80,6 +83,9 @@ for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
     test_value=$(generate_random_chars $NUM_CHARS)
     set_and_get "$KEY:$NUM_CHARS" "$test_value"
 done
+echo "redis-cli DEL $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $KEY:70000"
+redis-cli DEL $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $KEY:70000
+exit 0
 
 # echo "Testing xxl string (1,000,000 characters)..."
 # xxl_file=$(mktemp)

@@ -189,10 +189,10 @@ static int send_value_delete(std::string *response,
                                             key_store->m_num_rw_rows);
     key_store->m_num_rw_rows++;
     i++;
-    get_ctrl->m_num_bytes_outstanding += DELETE_BYTES;
     if (key_store->m_num_rw_rows == key_store->m_num_rows) {
       key_store->m_key_state = KeyState::MultiRowRWAll;
       key_store->m_num_current_rw_rows = i;
+    get_ctrl->m_num_bytes_outstanding += (i * DELETE_BYTES);
       DEB_DEL_CMD(("Commit send value delete: Key %u, last row:%u"
                    ", num_rows: %u, key_state: %u\n",
                    key_store->m_index,
@@ -206,6 +206,7 @@ static int send_value_delete(std::string *response,
     if (get_ctrl->m_num_bytes_outstanding > MAX_OUTSTANDING_BYTES) {
       key_store->m_key_state = KeyState::MultiRowRWValueSent;
       key_store->m_num_current_rw_rows = i;
+      get_ctrl->m_num_bytes_outstanding += (i * DELETE_BYTES);
       DEB_DEL_CMD(("Prepare send value delete: Key %u, last row:%u"
                    ", num_rows: %u, key_state: %u\n",
                    key_store->m_index,
@@ -241,6 +242,7 @@ static int send_next_delete_batch(std::string *response,
       get_ctrl->m_num_keys_outstanding++;
     } else if (key_storage[inx].m_key_state == KeyState::MultiRowRWValue) {
       assert(key_storage[inx].m_num_rows > key_storage[inx].m_num_rw_rows);
+      get_ctrl->m_num_keys_outstanding++;
       int ret_code = send_value_delete(response,
                                        &key_storage[inx],
                                        get_ctrl);
@@ -282,40 +284,45 @@ static int del_complex_rows(Ndb *ndb,
         return 1;
       }
       prepare_complex_delete_transaction(&key_storage[inx]);
+    } else {
+      DEB_DEL_CMD(("No complex delete of key: %u\n", inx));
     }
-    assert(num_complex_deletes == get_ctrl->m_num_keys_multi_rows);
-    Uint32 current_finished_in_loop = 0;
-    get_ctrl->m_num_keys_outstanding = num_complex_deletes;
-    get_ctrl->m_num_bytes_outstanding = num_complex_deletes * DELETE_BYTES;
-    do {
-      /**
-       * Now send off all prepared and wait for at least one to complete.
-       * We cannot wait for multiple ones since we could then run into
-       * deadlock issues. The transactions are independent of each other,
-       * so if one of them has to wait for a lock, it should not stop
-       * other transactions from progressing.
-       */
-      DEB_DEL_CMD(("Call sendPollNdb with %u keys, %u keys out and %u bytes"
-                    " out\n",
-                    get_ctrl->m_num_keys_multi_rows,
-                    get_ctrl->m_num_keys_outstanding,
-                    get_ctrl->m_num_bytes_outstanding));
-
-      int finished = ndb->sendPollNdb(3000, (int)1);
-      assert(finished >= 0);
-      current_finished_in_loop += finished;
-      DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
-          finished));
-      if (get_ctrl->m_num_keys_failed > 0) return 0;
-      int ret_code = send_next_delete_batch(response,
-                                            key_storage,
-                                            get_ctrl,
-                                            current_index,
-                                            loop_count,
-                                            current_finished_in_loop);
-      if (ret_code != 0) return 1;
-    } while (current_finished_in_loop < num_complex_deletes);
   }
+  DEB_DEL_CMD(("num_complex_deletes: %u, multi_rows: %u\n",
+    num_complex_deletes,
+    get_ctrl->m_num_keys_multi_rows));
+  assert(num_complex_deletes == get_ctrl->m_num_keys_multi_rows);
+  Uint32 current_finished_in_loop = 0;
+  get_ctrl->m_num_keys_outstanding = num_complex_deletes;
+  get_ctrl->m_num_bytes_outstanding = num_complex_deletes * DELETE_BYTES;
+  do {
+    /**
+     * Now send off all prepared and wait for at least one to complete.
+     * We cannot wait for multiple ones since we could then run into
+     * deadlock issues. The transactions are independent of each other,
+     * so if one of them has to wait for a lock, it should not stop
+     * other transactions from progressing.
+     */
+    DEB_DEL_CMD(("Call sendPollNdb with %u keys, %u keys out and %u bytes"
+                 " out\n",
+                 get_ctrl->m_num_keys_multi_rows,
+                 get_ctrl->m_num_keys_outstanding,
+                 get_ctrl->m_num_bytes_outstanding));
+
+    int finished = ndb->sendPollNdb(3000, (int)1);
+    assert(finished >= 0);
+    current_finished_in_loop += finished;
+    DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
+      finished));
+    if (get_ctrl->m_num_keys_failed > 0) return 0;
+    int ret_code = send_next_delete_batch(response,
+                                          key_storage,
+                                          get_ctrl,
+                                          current_index,
+                                          loop_count,
+                                          current_finished_in_loop);
+    if (ret_code != 0) return 1;
+  } while (current_finished_in_loop < num_complex_deletes);
   return 0;
 }
 
@@ -338,6 +345,7 @@ static int del_simple_rows(Ndb *ndb,
       return 1;
     }
     get_ctrl->m_num_transactions++;
+    get_ctrl->m_num_keys_outstanding++;
     Uint32 row_state = 0;
     int ret_code = prepare_simple_delete_row(response,
                                              tab,
@@ -364,6 +372,7 @@ static int del_simple_rows(Ndb *ndb,
     assert(finished >= 0);
     current_finished_in_loop += finished;
   } while (current_finished_in_loop < min_finished);
+  assert(get_ctrl->m_num_keys_outstanding == 0);
   return 0;
 }
 
@@ -508,6 +517,9 @@ void rondb_del_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response)
 {
+  DEB_DEL_CMD(("DEL command with %lu parameters, first_key: %s\n",
+               argv.size(),
+               argv[1].c_str()));
   rondb_del(ndb, argv, response, STRING_REDIS_KEY_ID);
 }
 
@@ -515,6 +527,7 @@ void rondb_hdel_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response)
 {
+  DEB_DEL_CMD(("HDEL command with %lu parameters", argv.size()));
   Uint64 redis_key_id;
   int ret_code = rondb_get_redis_key_id(ndb,
                                        redis_key_id,
