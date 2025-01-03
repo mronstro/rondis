@@ -34,6 +34,14 @@ void rondb_set_command(Ndb *ndb,
                        const pink::RedisCmdArgsType &argv,
                        std::string *response);
 
+void rondb_del_command(Ndb *ndb,
+                       const pink::RedisCmdArgsType &argv,
+                       std::string *response);
+
+void rondb_hdel_command(Ndb *ndb,
+                        const pink::RedisCmdArgsType &argv,
+                        std::string *response);
+
 void rondb_mset_command(Ndb *ndb,
                         const pink::RedisCmdArgsType &argv,
                         std::string *response);

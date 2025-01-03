@@ -124,7 +124,8 @@ enum KeyState {
     MultiRowRWValue = 5,
     MultiRowRWValueSent = 6,
     MultiRowRWAll = 7,
-    CompletedMultiRow = 8
+    CompletedMultiRow = 8,
+    CompletedReadError = 9
 };
 
 #define MAX_PARALLEL_KEY_OPS 100
@@ -132,7 +133,7 @@ enum KeyState {
 #define STRING_REDIS_KEY_ID 0
 #define MAX_PARALLEL_VALUE_RWS 2
 #define MAX_OUTSTANDING_BYTES (512 * 1024)
-#define DELETE_BYTES 200
+#define DELETE_BYTES 2000
 
 struct GetControl;
 struct KeyStorage {

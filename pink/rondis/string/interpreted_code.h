@@ -37,7 +37,6 @@ int initNdbCodeIncrDecr(std::string *response,
                         const NdbDictionary::Table *tab,
                         bool incr_flag,
                         Uint64 inc_dec_value);
-
 int write_hset_key_table(Ndb *ndb,
                          const NdbDictionary::Table *tab,
                          std::string std_key_str,
@@ -50,4 +49,7 @@ int write_key_row_no_commit(std::string *response,
                             NdbInterpretedCode &code,
                             const NdbDictionary::Table *tab,
                             Uint64 rondb_key);
+int simple_delete_key_row_code(std::string *response,
+                               NdbInterpretedCode &code,
+                               const NdbDictionary::Table *tab);
 #endif

@@ -11,19 +11,33 @@
 
 const Uint32 ROWS_PER_READ = 2;
 
-int create_key_row(std::string *response,
-                   const NdbDictionary::Table *tab,
-                   NdbTransaction *trans,
-                   Uint64 redis_key_id,
-                   Uint64 rondb_key,
-                   const char *key_str,
-                   Uint32 key_len,
-                   const char *value_str,
-                   Uint32 tot_value_len,
-                   Uint32 num_value_rows,
-                   Uint32 &prev_num_rows,
-                   Uint32 row_state);
+/* Callback function setup for DELETE MODULE */
+void prepare_delete_value_transaction(struct KeyStorage *key_storage);
+void commit_complex_delete_transaction(struct KeyStorage *key_storage);
+void prepare_complex_delete_transaction(struct KeyStorage *key_storage);
+void prepare_simple_delete_transaction(struct KeyStorage *key_storage);
 
+/* Setup operation record for DELETE MODULE */
+int prepare_complex_delete_row(std::string *response,
+                               const NdbDictionary::Table *tab,
+                               struct KeyStorage *key_storage);
+int prepare_simple_delete_row(std::string *response,
+                              const NdbDictionary::Table *tab,
+                              KeyStorage *key_storage);
+
+
+/* Callback function setup for SET MODULE */
+void commit_write_value_transaction(struct KeyStorage *key_store);
+void prepare_write_value_transaction(struct KeyStorage *key_store);
+void prepare_write_transaction(struct KeyStorage *key_store);
+void prepare_simple_write_transaction(struct KeyStorage *key_storage);
+
+/* Setup operation record for SET MODULE */
+int prepare_delete_value_row(std::string *response,
+                             struct KeyStorage *key_store,
+                             Uint32 ordinal);
+int prepare_set_value_row(std::string *response,
+                          KeyStorage *key_store);
 int write_data_to_key_op(std::string *response,
                          const NdbDictionary::Table *tab,
                          NdbTransaction *trans,
@@ -39,119 +53,28 @@ int write_data_to_key_op(std::string *response,
                          NdbRecAttr**,
                          NdbRecAttr**);
 
-int delete_key_row(std::string *response,
-                   Ndb *ndb,
-                   const NdbDictionary::Table *tab,
-                   NdbTransaction *trans,
-                   Uint64 redis_key_id,
-                   const char *key_str,
-                   Uint32 key_len,
-                   char *buf);
+/* Callback function setup for GET MODULE */
+void prepare_read_value_transaction(struct KeyStorage *key_store);
+void commit_read_value_transaction(struct KeyStorage *key_store);
+void prepare_read_transaction(struct KeyStorage *key_storage);
+void prepare_simple_read_transaction(struct KeyStorage *key_storage);
 
-int create_value_row(std::string *response,
-                     Ndb *ndb,
-                     const NdbDictionary::Table *value_tab,
-                     NdbTransaction *trans,
-                     const char *start_value_ptr,
-                     Uint64 key_id,
-                     Uint32 this_value_len,
-                     Uint32 ordinal,
-                     char *buf);
-
-int create_all_value_rows(std::string *response,
-                          Ndb *ndb,
-                          const NdbDictionary::Table *value_tab,
-                          NdbTransaction *trans,
-                          Uint64 rondb_key,
-                          const char *value_str,
-                          Uint32 value_len,
-                          Uint32 num_value_rows,
-                          char *buf);
-
-int delete_value_rows(std::string *response,
-                      const NdbDictionary::Table *value_tab,
-                      NdbTransaction *trans,
-                      Uint64 rondb_key,
-                      Uint32 start_ordinal,
-                      Uint32 end_ordinal);
-
-int prepare_set_value_row(std::string *response, KeyStorage *key_storage);
-int prepare_delete_value_row(std::string *response,
-                             struct KeyStorage *key_store,
-                             Uint32 ordinal);
-void prepare_write_value_transaction(NdbTransaction *trans,
-                                     struct KeyStorage *key_store);
-void commit_write_value_transaction(NdbTransaction *trans,
-                                    struct KeyStorage *key_store);
-void prepare_write_transaction(NdbTransaction *trans,
-                               struct KeyStorage *key_store);
-void prepare_simple_write_transaction(std::string *response,
-                                      NdbTransaction *trans,
-                                      struct KeyStorage *key_storage);
-/*
-    Since the beginning of the value is saved within the key table, it
-    can suffice to read the key table to get the value. If the value is
-*/
+/* Setup operation record for GET MODULE */
 int prepare_get_value_row(std::string *response,
                           NdbTransaction *trans,
                           struct value_table *value_row);
-
-void prepare_read_value_transaction(NdbTransaction *trans,
-                                    struct KeyStorage *key_storage);
-
-void commit_read_value_transaction(NdbTransaction *trans,
-                                   struct KeyStorage *key_storage);
-
 int prepare_get_key_row(std::string *response,
                         NdbTransaction *trans,
                         struct key_table *key_row);
-
-void prepare_read_transaction(std::string *response,
-                              NdbTransaction *trans,
-                              struct KeyStorage *key_storage);
-
 int prepare_get_simple_key_row(std::string *response,
                                const NdbDictionary::Table *tab,
                                NdbTransaction *trans,
                                struct key_table *key_row);
 
-void prepare_simple_read_transaction(std::string *response,
-                                    NdbTransaction *trans,
-                                    struct KeyStorage *key_storage);
-
-int get_simple_key_row(std::string *response,
-                       const NdbDictionary::Table *tab,
-                       Ndb *ndb,
-                       NdbTransaction *trans,
-                       struct key_table *key_row);
-
-int get_complex_key_row(std::string *response,
-                        const NdbDictionary::Dictionary *dict,
-                        const NdbDictionary::Table *tab,
-                        Ndb *ndb,
-                        NdbTransaction *trans,
-                        struct key_table *row);
-
-int get_value_rows(std::string *response,
-                   Ndb *ndb,
-                   const NdbDictionary::Dictionary *dict,
-                   NdbTransaction *trans,
-                   const Uint32 num_rows,
-                   const Uint64 key_id,
-                   const Uint32 tot_value_len);
-
-int read_batched_value_rows(std::string *response,
-                            NdbTransaction *trans,
-                            const Uint64 rondb_key,
-                            const Uint32 num_rows_to_read,
-                            const Uint32 start_ordinal,
-                            const NdbTransaction::ExecType commit_type);
-
-int rondb_get_rondb_key(const NdbDictionary::Table *tab,
-                        Uint64 &key_id,
-                        Ndb *ndb,
-                        std::string *response);
-
+/**
+ * INCR and DECR MODULE
+ * --------------------
+ */
 void incr_decr_key_row(std::string *response,
                        Ndb *ndb,
                        const NdbDictionary::Table *tab,
@@ -159,6 +82,15 @@ void incr_decr_key_row(std::string *response,
                        struct key_table *key_row,
                        bool incr_flag,
                        Uint64 inc_dec_value);
+
+/**
+ * Uinique key MODULE for Rondis
+ * -----------------------------
+ */
+int rondb_get_rondb_key(const NdbDictionary::Table *tab,
+                        Uint64 &key_id,
+                        Ndb *ndb,
+                        std::string *response);
 
 int rondb_get_redis_key_id(Ndb *ndb,
                            Uint64 &redis_key_id,
