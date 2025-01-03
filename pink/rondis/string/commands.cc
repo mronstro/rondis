@@ -404,6 +404,7 @@ void rondb_del(Ndb *ndb,
   get_ctrl->m_num_keys_completed_first_pass = 0;
   get_ctrl->m_num_keys_multi_rows = 0;
   get_ctrl->m_num_keys_failed = 0;
+  get_ctrl->m_num_read_errors = 0;
   get_ctrl->m_error_code = 0;
   for (Uint32 i = 0; i < num_keys; i++) {
     Uint32 arg_index_key = (2 * i) + arg_index_start;
@@ -490,16 +491,15 @@ void rondb_del(Ndb *ndb,
     release_del(get_ctrl);
     return;
   }
-  if (redis_key_id == STRING_REDIS_KEY_ID) {
-    response->append("+OK\r\n");
-  } else {
-    char buf[20];
-    snprintf(buf,
-             sizeof(buf),
-             ":%u\r\n",
-             get_ctrl->m_num_keys_requested);
-    response->append(&buf[0]);
-  }
+  assert(get_ctrl->m_num_keys_requested >= get_ctrl->m_num_read_errors);
+  Uint32 deleted_rows =
+    get_ctrl->m_num_keys_requested - get_ctrl->m_num_read_errors;
+  char buf[20];
+  snprintf(buf,
+           sizeof(buf),
+           ":%u\r\n",
+           deleted_rows);
+  response->append(&buf[0]);
   release_del(get_ctrl);
   return;
 }
@@ -836,6 +836,7 @@ void rondb_mset(Ndb *ndb,
   get_ctrl->m_num_keys_completed_first_pass = 0;
   get_ctrl->m_num_keys_multi_rows = 0;
   get_ctrl->m_num_keys_failed = 0;
+  get_ctrl->m_num_read_errors = 0;
   get_ctrl->m_error_code = 0;
   for (Uint32 i = 0; i < num_keys; i++) {
     Uint32 arg_index_key = (2 * i) + arg_index_start;
@@ -1246,6 +1247,7 @@ void rondb_mget(Ndb *ndb,
   get_ctrl->m_num_keys_completed_first_pass = 0;
   get_ctrl->m_num_keys_multi_rows = 0;
   get_ctrl->m_num_keys_failed = 0;
+  get_ctrl->m_num_read_errors = 0;
   get_ctrl->m_error_code = 0;
   for (Uint32 i = 0; i < num_keys; i++) {
     Uint32 arg_index = i + arg_index_start;

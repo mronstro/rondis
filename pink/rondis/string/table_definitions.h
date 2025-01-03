@@ -175,6 +175,7 @@ struct GetControl {
     Uint32 m_num_keys_completed_first_pass;
     Uint32 m_num_keys_multi_rows;
     Uint32 m_num_keys_failed;
+    Uint32 m_num_read_errors;
     Uint32 m_error_code;
 };
 #endif

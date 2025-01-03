@@ -158,6 +158,7 @@ complex_delete_callback(int result, NdbTransaction *trans, void *aObject) {
       key_store->m_key_state = KeyState::CompletedReadError;
       assert(get_ctrl->m_num_keys_multi_rows > 0);
       get_ctrl->m_num_keys_multi_rows--;
+      get_ctrl->m_num_read_errors++;
     } else {
       key_store->m_key_state = KeyState::CompletedFailed;
       get_ctrl->m_num_keys_failed++;
@@ -269,6 +270,7 @@ simple_delete_callback(int result, NdbTransaction *trans, void *aObject) {
     } else if (code == READ_ERROR) {
       key_store->m_key_state = KeyState::CompletedReadError;
       get_ctrl->m_num_keys_completed_first_pass++;
+      get_ctrl->m_num_read_errors++;
     } else {
       get_ctrl->m_num_keys_failed++;
       if (get_ctrl->m_error_code == 0) {
