@@ -184,6 +184,13 @@ rand_key(struct KeyStorage *key_store,
   return;
 }
 
+static int
+execute_ndb(Ndb *ndb, int min_finished, int line) {
+  (void)line;
+  int finished = ndb->sendPollNdb(100, min_finished);
+  return finished;
+}
+
 /**
  * RELEASE MODULE
  * --------------
@@ -374,8 +381,7 @@ static int del_complex_rows(Ndb *ndb,
                  get_ctrl->m_num_bytes_outstanding,
                  current_finished_in_loop));
     int min_finished = 1;
-    int finished = 0;
-    finished = ndb->sendPollNdb(3000, (int)min_finished);
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     DEB_DEL_CMD(("Finished serving %u keys, prepare next batch"
                  ", current_finished_in_loop: %u, ndb: %p\n",
       finished, current_finished_in_loop, ndb));
@@ -428,7 +434,7 @@ static int del_simple_rows(Ndb *ndb,
   }
   Uint32 current_finished_in_loop = 0;
   assert(loop_count >= get_ctrl->m_num_keys_multi_rows);
-  Uint32 min_finished = loop_count;
+  Uint32 count_finished = loop_count;
   do {
     /**
      * Now send off all prepared and wait for all to complete.
@@ -439,10 +445,11 @@ static int del_simple_rows(Ndb *ndb,
      * avoid deadlocks by sorting the rows AND by using a single
      * partition in the table 'string_keys'.
      */
-    int finished = ndb->sendPollNdb(3000, (int)min_finished);
+    int min_finished = 1;
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     assert(finished >= 0);
     current_finished_in_loop += finished;
-  } while (current_finished_in_loop < min_finished);
+  } while (current_finished_in_loop < count_finished);
   assert(get_ctrl->m_num_keys_outstanding == 0);
   return 0;
 }
@@ -789,8 +796,8 @@ static int set_complex_rows(Ndb *ndb,
                   get_ctrl->m_num_keys_outstanding,
                   get_ctrl->m_num_bytes_outstanding,
                   current_finished_in_loop));
-
-    int finished = ndb->sendPollNdb(3000, (int)1);
+    int min_finished = 1;
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     assert(finished >= 0);
     current_finished_in_loop += finished;
     DEB_MSET_CMD(("Finished serving %u keys, %u remain,"
@@ -870,8 +877,8 @@ static int set_simple_rows(Ndb *ndb,
   }
   Uint32 current_finished_in_loop = 0;
   assert(loop_count >= get_ctrl->m_num_keys_multi_rows);
-  Uint32 min_finished = loop_count - get_ctrl->m_num_keys_multi_rows;
-  get_ctrl->m_num_keys_outstanding = min_finished;
+ Uint32 count_finished = loop_count - get_ctrl->m_num_keys_multi_rows;
+  get_ctrl->m_num_keys_outstanding = count_finished;
   do {
     /**
      * Now send off all prepared and wait for all to complete.
@@ -882,10 +889,11 @@ static int set_simple_rows(Ndb *ndb,
      * avoid deadlocks by sorting the rows AND by using a single
      * partition in the table 'string_keys'.
      */
-    int finished = ndb->sendPollNdb(3000, (int)min_finished);
+    int min_finished = 1;
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     assert(finished >= 0);
     current_finished_in_loop += finished;
-  } while (current_finished_in_loop < min_finished);
+  } while (current_finished_in_loop < count_finished);
   return 0;
 }
 
@@ -1221,8 +1229,8 @@ static int get_complex_rows(Ndb *ndb,
                   get_ctrl->m_num_keys_multi_rows,
                   get_ctrl->m_num_keys_outstanding,
                   get_ctrl->m_num_bytes_outstanding));
-
-    int finished = ndb->sendPollNdb(3000, (int)1);
+    int min_finished = 1;
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     assert(finished >= 0);
     current_finished_in_loop += finished;
     DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
@@ -1266,7 +1274,6 @@ static int get_simple_rows(Ndb *ndb,
     prepare_simple_read_transaction(&key_storage[inx]);
   }
   Uint32 current_finished_in_loop = 0;
-  Uint32 min_finished = loop_count;
   get_ctrl->m_num_keys_outstanding = loop_count;
   do {
     /**
@@ -1274,7 +1281,8 @@ static int get_simple_rows(Ndb *ndb,
      * Since we are using CommitedRead there is no risk of
      * deadlocks by waiting for all to complete here.
      */
-    int finished = ndb->sendPollNdb(3000, (int)min_finished);
+    int min_finished = 1;
+    int finished = execute_ndb(ndb, min_finished, __LINE__);
     assert(finished >= 0);
     current_finished_in_loop += finished;
   } while (current_finished_in_loop < loop_count);
