@@ -161,6 +161,7 @@ struct KeyStorage {
     };
     enum KeyState m_key_state;
     struct key_table m_key_row;
+    char m_key_buf[16];
 };
 
 class Ndb;

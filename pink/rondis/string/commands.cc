@@ -11,11 +11,20 @@
 #include "../common.h"
 #include "table_definitions.h"
 
-#define DEBUG_MGET_CMD 1
-#define DEBUG_MSET_CMD 1
-#define DEBUG_DEL_CMD 1
-#define DEBUG_HSET_KEY 1
-#define DEBUG_INCR 1
+#define RAND_CONSTANT 10000
+
+//#define DEBUG_MGET_CMD 1
+//#define DEBUG_MSET_CMD 1
+//#define DEBUG_DEL_CMD 1
+//#define DEBUG_HSET_KEY 1
+//#define DEBUG_INCR 1
+//#define DEBUG_RAND_KEY 1
+
+#ifdef DEBUG_RAND_KEY
+#define DEB_RAND_KEY(arglist) do { printf arglist ; } while (0)
+#else
+#define DEB_RAND_KEY(arglist)
+#endif
 
 #ifdef DEBUG_INCR
 #define DEB_INCR(arglist) do { printf arglist ; } while (0)
@@ -36,7 +45,7 @@
 #endif
 
 #ifdef DEBUG_DEL_CMD
-#define DEB_DEL_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
+#define DEB_DEL_CMD(arglist) do { printf arglist ; } while (0)
 #else
 #define DEB_DEL_CMD(arglist)
 #endif
@@ -156,6 +165,23 @@ close_transactions(KeyStorage *key_storage,
       key_storage[i].m_trans = nullptr;
     }
   }
+}
+
+static void
+rand_key(struct KeyStorage *key_store,
+         const char **key_str,
+         Uint32 &key_len) {
+  Uint32 rand_number = arc4random();
+  rand_number = rand_number % RAND_CONSTANT;
+  char *new_key_str = &key_store->m_key_buf[0];
+  Uint32 new_len = snprintf(new_key_str,
+                            16,
+                            "key:%u",
+                            rand_number);
+  *key_str = new_key_str;
+  key_len = new_len;
+  DEB_RAND_KEY(("Change to use key: %s\n", new_key_str));
+  return;
 }
 
 /**
@@ -911,8 +937,13 @@ void rondb_mset(Ndb *ndb,
     key_storage[i].m_close_flag = false;
     key_storage[i].m_get_ctrl = get_ctrl;
     key_storage[i].m_trans = nullptr;
-    key_storage[i].m_key_str = argv[arg_index_key].c_str();
-    key_storage[i].m_key_len = argv[arg_index_key].size();
+    const char *key_str = argv[arg_index_key].c_str();
+    Uint32 key_len = argv[arg_index_key].size();
+    if (memcmp(key_str, "key:__rand_int__", 16) == 0) {
+      rand_key(&key_storage[i], &key_str, key_len);
+    }
+    key_storage[i].m_key_str = key_str;
+    key_storage[i].m_key_len = key_len;
     key_storage[i].m_value_ptr = (char*)argv[arg_index_val].c_str();
     key_storage[i].m_value_size = argv[arg_index_val].size();
     key_storage[i].m_header_len = 0;
@@ -1326,8 +1357,13 @@ void rondb_mget(Ndb *ndb,
     key_storage[i].m_close_flag = false;
     key_storage[i].m_get_ctrl = get_ctrl;
     key_storage[i].m_trans = nullptr;
-    key_storage[i].m_key_str = argv[arg_index].c_str();
-    key_storage[i].m_key_len = argv[arg_index].size();
+    const char *key_str = argv[arg_index].c_str();
+    Uint32 key_len = argv[arg_index].size();
+    if (memcmp(key_str, "key:__rand_int__", 16) == 0) {
+      rand_key(&key_storage[i], &key_str, key_len);
+    }
+    key_storage[i].m_key_str = key_str;
+    key_storage[i].m_key_len = key_len;
     key_storage[i].m_value_ptr = nullptr;
     key_storage[i].m_header_len = 0;
     key_storage[i].m_first_value_row = 0;

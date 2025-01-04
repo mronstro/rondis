@@ -72,9 +72,11 @@ redis-cli ping && echo
 
 echo "Testing empty string..."
 hset_and_hget "$KEY:empty" ""
+redis-cli HDEL $HASH_KEY "$KEY:empty"
 
 echo "Testing small string..."
 hset_and_hget "$KEY:small" "hello"
+redis-cli HDEL $HASH_KEY "$KEY:small"
 
 # Minimal amount to create value rows: 30000
 for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
@@ -82,6 +84,7 @@ for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
     test_value=$(generate_random_chars $NUM_CHARS)
     hset_and_hget "$KEY:$NUM_CHARS" "$test_value"
 done
+redis-cli HDEL $HASH_KEY $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $KEY:70000
 
 # echo "Testing xxl string (1,000,000 characters)..."
 # xxl_file=$(mktemp)
@@ -99,21 +102,29 @@ hset_and_hget "$KEY:binary" "$binary_value"
 echo "Testing unicode characters..."
 unicode_value="🔥💧🌳"
 hset_and_hget "$KEY:unicode" "$unicode_value"
+redis-cli HDEL $HASH_KEY $KEY:nonascii $KEY:binary $KEY:unicode
 
 echo "Testing multiple keys..."
 for i in {1..10}; do
     test_value="Value_$i"_$(head -c $((RANDOM % 100 + 1)) < /dev/zero | tr '\0' 'a')
     hset_and_hget "$KEY:multiple_$i" "$test_value"
 done
+redis-cli HDEL $HASH_KEY $KEY:multiple_1 $KEY:multiple_2 $KEY:multiple_3 $KEY:multiple_4 $KEY:multiple_5 $KEY:multiple_6 $KEY:multiple_7 $KEY:multiple_8 $KEY:multiple_9 $KEY:multiple_10
 
 echo "Testing piped keys..."
 for i in {1..10000}; do
     echo "HSET $HASH_KEY $KEY:piped_$i value_$i"
 done | redis-cli --pipe --verbose
 
+echo "Testing delete piped keys..."
+for i in {1..10000}; do
+    echo "HDEL $HASH_KEY $KEY:piped_$i"
+done | redis-cli --pipe --verbose
+
 echo "Testing edge case large key length (Redis allows up to 512MB for the value)..."
 edge_value=$(head -c 100000 < /dev/zero | tr '\0' 'b')
 hset_and_hget "$KEY:edge_large" "$edge_value"
+redis-cli HDEL $HASH_KEY $KEY:edge_large
 
 echo ""
 incr_field="$KEY:incr${RANDOM}${RANDOM}"
@@ -144,6 +155,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli HDEL $HASH_KEY $incr_field
 
 echo ""
 incrby_field="$KEY:incrby${RANDOM}${RANDOM}"
@@ -175,6 +187,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli HDEL $HASH_KEY $incrby_field
 
 echo ""
 decr_field="$KEY:decr${RANDOM}${RANDOM}"
@@ -205,6 +218,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli HDEL $HASH_KEY $decr_field
 
 echo ""
 decrby_field="$KEY:decr${RANDOM}${RANDOM}"
@@ -236,5 +250,6 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli HDEL $HASH_KEY $decrby_field
 
 echo "All tests completed."

@@ -11,12 +11,12 @@
 #include "table_definitions.h"
 #include "interpreted_code.h"
 
-#define DEBUG_DEL_CMD 1
-#define DEBUG_KS 1
-#define DEBUG_CTRL 1
-#define DEBUG_HSET_KEY 1
-#define DEBUG_MSET 1
-#define DEBUG_INCR 1
+//#define DEBUG_DEL_CMD 1
+//#define DEBUG_KS 1
+//#define DEBUG_CTRL 1
+//#define DEBUG_HSET_KEY 1
+//#define DEBUG_MSET 1
+//#define DEBUG_INCR 1
 
 #ifdef DEBUG_DEL_CMD
 #define DEB_DEL_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
@@ -134,7 +134,7 @@ commit_complex_delete_callback(int result,
 }
 
 void commit_complex_delete_transaction(struct KeyStorage *key_storage) {
-  key_storage->m_trans->executeAsynchPrepare(NdbTransaction::NoCommit,
+  key_storage->m_trans->executeAsynchPrepare(NdbTransaction::Commit,
                                              &commit_complex_delete_callback,
                                              (void*)key_storage);
 }

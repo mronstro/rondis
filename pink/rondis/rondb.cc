@@ -8,10 +8,10 @@
 #include "string/commands.h"
 #include <strings.h>
 
-#define DEBUG_NDB_CMD 1
+//#define DEBUG_NDB_CMD 1
 
 #ifdef DEBUG_NDB_CMD
-#define DEB_NDB_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
+#define DEB_NDB_CMD(arglist) do { printf arglist ; } while (0)
 #else
 #define DEB_NDB_CMD(arglist)
 #endif
@@ -150,7 +150,13 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
     }
   } else {
     Ndb *ndb = ndb_objects[worker_id];
-    DEB_NDB_CMD(("ndb: %p, worker_id: %d\n", ndb, worker_id));
+    DEB_NDB_CMD(("cmd: %s, params: %lu\n", command, argv.size()));
+#ifdef DEBUG_NDB_CMD
+    for (Uint32 i = 1; i < argv.size(); i++) {
+      DEB_NDB_CMD(("param[%u]: %s is len: %lu\n",
+        i, argv[i].c_str(), argv[i].size()));
+     }
+#endif
     if (strcasecmp(command, "GET") == 0) {
       if (argv.size() == 2) {
         rondb_get_command(ndb, argv, response);

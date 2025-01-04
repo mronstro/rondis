@@ -71,11 +71,11 @@ redis-cli ping && echo
 echo "Testing empty string..."
 set_and_get "$KEY:empty" ""
 
-#redis-cli DEL "$KEY:empty"
+redis-cli DEL "$KEY:empty"
 
 echo "Testing small string..."
 set_and_get "$KEY:small" "hello"
-#redis-cli DEL "$KEY:small"
+redis-cli DEL "$KEY:small"
 
 # Minimal amount to create value rows: 30000
 for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
@@ -94,6 +94,7 @@ redis-cli DEL $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $K
 
 echo "Testing non-ASCII string..."
 set_and_get "$KEY:nonascii" "こんにちは世界"  # Japanese for "Hello, World"
+redis-cli DEL "$KEY:nonascii"
 
 echo "Testing binary data..."
 binary_value=$(echo -e "\x01\x02\x03\x04\x05\x06\x07")
@@ -102,21 +103,27 @@ set_and_get "$KEY:binary" "$binary_value"
 echo "Testing unicode characters..."
 unicode_value="🔥💧🌳"
 set_and_get "$KEY:unicode" "$unicode_value"
+redis-cli DEL "$KEY:binary" "$KEY:unicode"
 
 echo "Testing multiple keys..."
 for i in {1..10}; do
     test_value="Value_$i"_$(head -c $((RANDOM % 100 + 1)) < /dev/zero | tr '\0' 'a')
     set_and_get "$KEY:multiple_$i" "$test_value"
 done
+redis-cli DEL "$KEY:multiple_1" "$KEY:multiple_2" "$KEY:multiple_3" "$KEY:multiple_4" "$KEY:multiple_5" "$KEY:multiple_6" "$KEY:multiple_7" "$KEY:multiple_8" "$KEY:multiple_9" "$KEY:multiple_10"
 
 echo "Testing piped keys..."
 for i in {1..10000}; do
     echo "SET $KEY:piped_$i value_$i"
 done | redis-cli --pipe --verbose
+for i in {1..10000}; do
+    echo "DEL $KEY:piped_$i value_$i"
+done | redis-cli --pipe --verbose
 
 echo "Testing edge case large key length (Redis allows up to 512MB for the value)..."
 edge_value=$(head -c 100000 < /dev/zero | tr '\0' 'b')
 set_and_get "$KEY:edge_large" "$edge_value"
+redis-cli DEL "$KEY:edge_large"
 
 echo
 incr_key="$KEY:incr${RANDOM}${RANDOM}"
@@ -148,6 +155,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli DEL "$incr_key"
 
 echo
 incrby_key="$KEY:incrby${RANDOM}${RANDOM}"
@@ -179,6 +187,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli DEL "$incrby_key"
 
 echo
 decr_key="$KEY:decr${RANDOM}${RANDOM}"
@@ -210,6 +219,7 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli DEL "$decr_key"
 
 echo
 decrby_key="$KEY:decr${RANDOM}${RANDOM}"
@@ -241,18 +251,20 @@ for i in {1..10}; do
         exit 1
     fi
 done
+redis-cli DEL "$decrby_key"
 
 echo
 # Create multi-value rows in parallel
 run_client() {
     local client="$1"
     local key="$2"
-    NUM_ITERATIONS=5
+    NUM_ITERATIONS=500
     for ((i=1; i<=$NUM_ITERATIONS; i++)); do
         # Generate a unique key for each client and iteration
-        local test_value=$(generate_random_chars 32000)
+        local test_value=$(generate_random_chars 50000)
         check_set "$key" "$test_value" > /dev/null
-        echo "PASS ($i/$NUM_ITERATIONS): client $client with key $key"
+        redis-cli DEL "$key" > /dev/null
+#       echo "PASS ($i/$NUM_ITERATIONS): client $client with key $key"
     done
 }
 
@@ -266,5 +278,4 @@ for pid in ${pids[*]}; do
     wait $pid
 done
 echo "PASS: All parallel clients completed."
-
 echo "All tests completed."
