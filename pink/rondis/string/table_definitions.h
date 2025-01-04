@@ -146,6 +146,7 @@ struct KeyStorage {
     Uint64 m_rondb_key;
     Uint32 m_key_len;
     char m_header_buf[20];
+    bool m_close_flag;
     Uint32 m_header_len;
     Uint32 m_index;
     Uint32 m_first_value_row;

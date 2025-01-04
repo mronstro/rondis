@@ -36,7 +36,7 @@
 #endif
 
 #ifdef DEBUG_DEL_CMD
-#define DEB_DEL_CMD(arglist) do { printf arglist ; } while (0)
+#define DEB_DEL_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
 #else
 #define DEB_DEL_CMD(arglist)
 #endif
@@ -124,6 +124,23 @@ bool setup_transaction(
                                *ret_tab);
 }
 
+static void
+close_finished_transactions(KeyStorage *key_storage,
+                            GetControl *get_ctrl,
+                            Uint32 loop_count,
+                            Uint32 current_index) {
+  for (Uint32 i = 0; i < loop_count; i++) {
+    Uint32 inx = current_index + i;
+    if (key_storage[inx].m_close_flag == true) {
+      assert(get_ctrl->m_num_transactions > 0);
+      get_ctrl->m_num_transactions--;
+      get_ctrl->m_ndb->closeTransaction(key_storage[inx].m_trans);
+      key_storage[inx].m_trans = nullptr;
+      key_storage[inx].m_close_flag = false;
+    }
+  }
+}
+
 /**
  * RELEASE MODULE
  * --------------
@@ -192,7 +209,7 @@ static int send_value_delete(std::string *response,
     if (key_store->m_num_rw_rows == key_store->m_num_rows) {
       key_store->m_key_state = KeyState::MultiRowRWAll;
       key_store->m_num_current_rw_rows = i;
-    get_ctrl->m_num_bytes_outstanding += (i * DELETE_BYTES);
+      get_ctrl->m_num_bytes_outstanding += (i * DELETE_BYTES);
       DEB_DEL_CMD(("Commit send value delete: Key %u, last row:%u"
                    ", num_rows: %u, key_state: %u\n",
                    key_store->m_index,
@@ -240,6 +257,7 @@ static int send_next_delete_batch(std::string *response,
       key_storage[inx].m_key_state = KeyState::MultiRowRWAll;
       key_storage[inx].m_num_current_rw_rows = 0;
       get_ctrl->m_num_keys_outstanding++;
+      DEB_DEL_CMD(("Commit with no value rows"));
     } else if (key_storage[inx].m_key_state == KeyState::MultiRowRWValue) {
       assert(key_storage[inx].m_num_rows > key_storage[inx].m_num_rw_rows);
       get_ctrl->m_num_keys_outstanding++;
@@ -295,6 +313,7 @@ static int del_complex_rows(Ndb *ndb,
   Uint32 current_finished_in_loop = 0;
   get_ctrl->m_num_keys_outstanding = num_complex_deletes;
   get_ctrl->m_num_bytes_outstanding = num_complex_deletes * DELETE_BYTES;
+  Int32 sent = num_complex_deletes;
   do {
     /**
      * Now send off all prepared and wait for at least one to complete.
@@ -304,16 +323,27 @@ static int del_complex_rows(Ndb *ndb,
      * other transactions from progressing.
      */
     DEB_DEL_CMD(("Call sendPollNdb with %u keys, %u keys out and %u bytes"
-                 " out\n",
+                 " out, current_finished_in_loop: %u\n",
                  get_ctrl->m_num_keys_multi_rows,
                  get_ctrl->m_num_keys_outstanding,
-                 get_ctrl->m_num_bytes_outstanding));
-
-    int finished = ndb->sendPollNdb(3000, (int)1);
-    assert(finished >= 0);
+                 get_ctrl->m_num_bytes_outstanding,
+                 current_finished_in_loop));
+    int min_finished = 1;
+    int finished = 0;
+    if (sent > 0) 
+      finished = ndb->sendPollNdb(3000, (int)min_finished);
+    else
+      finished = ndb->pollNdb(3000, (int)min_finished);
+    DEB_DEL_CMD(("Finished serving %u keys, prepare next batch"
+                 ", current_finished_in_loop: %u, ndb: %p\n",
+      finished, current_finished_in_loop, ndb));
+    assert(finished > 0);
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
     current_finished_in_loop += finished;
-    DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
-      finished));
+    Uint32 prev_current_finished = current_finished_in_loop;
     if (get_ctrl->m_num_keys_failed > 0) return 0;
     int ret_code = send_next_delete_batch(response,
                                           key_storage,
@@ -321,6 +351,11 @@ static int del_complex_rows(Ndb *ndb,
                                           current_index,
                                           loop_count,
                                           current_finished_in_loop);
+    DEB_DEL_CMD(("Next delete batch sent, keys out: %u,"
+                 "current_finished_in_loop: %u\n",
+      get_ctrl->m_num_keys_outstanding, current_finished_in_loop));
+    sent = prev_current_finished - current_finished_in_loop;
+    assert(sent >= 0);
     if (ret_code != 0) return 1;
   } while (current_finished_in_loop < num_complex_deletes);
   return 0;
@@ -371,6 +406,10 @@ static int del_simple_rows(Ndb *ndb,
     int finished = ndb->sendPollNdb(3000, (int)min_finished);
     assert(finished >= 0);
     current_finished_in_loop += finished;
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
   } while (current_finished_in_loop < min_finished);
   assert(get_ctrl->m_num_keys_outstanding == 0);
   return 0;
@@ -387,7 +426,6 @@ void rondb_del(Ndb *ndb,
   assert(num_keys > 0);
   const NdbDictionary::Dictionary *dict;
   const NdbDictionary::Table *tab = nullptr;
-  NdbTransaction *trans = nullptr;
   struct KeyStorage *key_storage;
   key_storage = (struct KeyStorage*)malloc(
     sizeof(struct KeyStorage) * num_keys);
@@ -416,15 +454,17 @@ void rondb_del(Ndb *ndb,
   get_ctrl->m_num_read_errors = 0;
   get_ctrl->m_error_code = 0;
   for (Uint32 i = 0; i < num_keys; i++) {
-    Uint32 arg_index_key = (2 * i) + arg_index_start;
-    Uint32 arg_index_val = ((2 * i) + 1) + arg_index_start;
+    Uint32 arg_index_key = i + arg_index_start;
     key_storage[i].m_index = i;
+    key_storage[i].m_close_flag = false;
     key_storage[i].m_get_ctrl = get_ctrl;
     key_storage[i].m_trans = nullptr;
     key_storage[i].m_key_str = argv[arg_index_key].c_str();
     key_storage[i].m_key_len = argv[arg_index_key].size();
-    key_storage[i].m_value_ptr = (char*)argv[arg_index_val].c_str();
-    key_storage[i].m_value_size = argv[arg_index_val].size();
+    DEB_DEL_CMD(("DEL key: %u, key_str: %s, key_len: %u\n",
+      i, key_storage[i].m_key_str, key_storage[i].m_key_len));
+    key_storage[i].m_value_ptr = nullptr;
+    key_storage[i].m_value_size = 0;
     key_storage[i].m_header_len = 0;
     key_storage[i].m_first_value_row = 0;
     key_storage[i].m_current_pos = 0;
@@ -443,7 +483,6 @@ void rondb_del(Ndb *ndb,
     release_del(get_ctrl);
     return;
   }
-  DEB_DEL_CMD(("DEL of %u keys\n", num_keys));
   Uint32 current_index = 0;
   do {
     Uint32 loop_count = std::min(num_keys - current_index,
@@ -611,6 +650,7 @@ static int send_next_write_batch(std::string *response,
                                  Uint32 loop_count,
                                  Uint32 &current_finished) {
   if (get_ctrl->m_num_keys_multi_rows == 0) {
+    DEB_DEL_CMD(("No multi rows left, Line: %u\n", __LINE__));
     return 0;
   }
   for (Uint32 i = 0; i < loop_count; i++) {
@@ -626,6 +666,7 @@ static int send_next_write_batch(std::string *response,
         commit_write_value_transaction(&key_storage[inx]);
         assert(current_finished > 0);
         current_finished--;
+        DEB_DEL_CMD(("Commit with no value rows"));
         key_storage[inx].m_key_state = KeyState::MultiRowRWAll;
         continue;
       }
@@ -707,24 +748,30 @@ static int set_complex_rows(Ndb *ndb,
      * other transactions from progressing.
      */
     DEB_MGET_CMD(("Call sendPollNdb with %u keys, %u keys out and %u bytes"
-                  " out\n",
+                  " out, current_finished_in_loop: %u\n",
                   get_ctrl->m_num_keys_multi_rows,
                   get_ctrl->m_num_keys_outstanding,
-                  get_ctrl->m_num_bytes_outstanding));
+                  get_ctrl->m_num_bytes_outstanding,
+                  current_finished_in_loop));
 
     int finished = ndb->sendPollNdb(3000, (int)1);
     assert(finished >= 0);
     current_finished_in_loop += finished;
-    DEB_MSET_CMD(("Finished serving %u keys, prepare next batch\n",
-      finished));
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
+    DEB_MSET_CMD(("Finished serving %u keys, %u remain,"
+                  " prepare next batch\n",
+      finished, current_finished_in_loop));
     if (get_ctrl->m_num_keys_failed > 0) return 0;
-      int ret_code = send_next_write_batch(response,
-                                           key_storage,
-                                           get_ctrl,
-                                           current_index,
-                                           loop_count,
-                                           current_finished_in_loop);
-      if (ret_code != 0) return 1;
+    int ret_code = send_next_write_batch(response,
+                                         key_storage,
+                                         get_ctrl,
+                                         current_index,
+                                         loop_count,
+                                         current_finished_in_loop);
+    if (ret_code != 0) return 1;
   } while (current_finished_in_loop < num_complex_writes);
   return 0;
 }
@@ -806,6 +853,10 @@ static int set_simple_rows(Ndb *ndb,
     int finished = ndb->sendPollNdb(3000, (int)min_finished);
     assert(finished >= 0);
     current_finished_in_loop += finished;
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
   } while (current_finished_in_loop < min_finished);
   return 0;
 }
@@ -855,6 +906,7 @@ void rondb_mset(Ndb *ndb,
     Uint32 arg_index_key = (2 * i) + arg_index_start;
     Uint32 arg_index_val = ((2 * i) + 1) + arg_index_start;
     key_storage[i].m_index = i;
+    key_storage[i].m_close_flag = false;
     key_storage[i].m_get_ctrl = get_ctrl;
     key_storage[i].m_trans = nullptr;
     key_storage[i].m_key_str = argv[arg_index_key].c_str();
@@ -1136,6 +1188,10 @@ static int get_complex_rows(Ndb *ndb,
     int finished = ndb->sendPollNdb(3000, (int)1);
     assert(finished >= 0);
     current_finished_in_loop += finished;
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
     DEB_MGET_CMD(("Finished serving %u keys, prepare next batch\n",
       finished));
     if (get_ctrl->m_num_keys_failed > 0) return 0;
@@ -1188,6 +1244,10 @@ static int get_simple_rows(Ndb *ndb,
     int finished = ndb->sendPollNdb(3000, (int)min_finished);
     assert(finished >= 0);
     current_finished_in_loop += finished;
+    close_finished_transactions(key_storage,
+                                get_ctrl,
+                                loop_count,
+                                current_index);
   } while (current_finished_in_loop < loop_count);
   return 0;
 }
@@ -1265,6 +1325,7 @@ void rondb_mget(Ndb *ndb,
   for (Uint32 i = 0; i < num_keys; i++) {
     Uint32 arg_index = i + arg_index_start;
     key_storage[i].m_index = i;
+    key_storage[i].m_close_flag = false;
     key_storage[i].m_get_ctrl = get_ctrl;
     key_storage[i].m_trans = nullptr;
     key_storage[i].m_key_str = argv[arg_index].c_str();

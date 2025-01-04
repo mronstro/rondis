@@ -19,7 +19,7 @@
 #define DEBUG_INCR 1
 
 #ifdef DEBUG_DEL_CMD
-#define DEB_DEL_CMD(arglist) do { printf arglist ; } while (0)
+#define DEB_DEL_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
 #else
 #define DEB_DEL_CMD(arglist)
 #endif
@@ -77,9 +77,7 @@ delete_value_callback(int result, NdbTransaction *trans, void *aObject) {
     if (get_ctrl->m_error_code == 0) {
       get_ctrl->m_error_code = code;
     }
-    get_ctrl->m_num_transactions--;
-    get_ctrl->m_ndb->closeTransaction(trans);
-    key_store->m_trans = nullptr;
+    key_store->m_close_flag = true;
   } else {
     key_store->m_key_state = KeyState::MultiRowRWValue;
   }
@@ -112,7 +110,7 @@ commit_complex_delete_callback(int result,
   (void)result;
   int code = trans->getNdbError().code;
   if (code != 0) {
-    DEB_KS(("Key %u had error: %d\n", key_store->m_index, code));
+    DEB_DEL_CMD(("Key %u had error: %d\n", key_store->m_index, code));
     key_store->m_key_state = KeyState::CompletedFailed;
     get_ctrl->m_num_keys_failed++;
     if (get_ctrl->m_error_code == 0) {
@@ -123,16 +121,14 @@ commit_complex_delete_callback(int result,
     assert(get_ctrl->m_num_keys_multi_rows > 0);
     get_ctrl->m_num_keys_multi_rows--;
   }
-  get_ctrl->m_num_transactions--;
-  get_ctrl->m_ndb->closeTransaction(trans);
-  key_store->m_trans = nullptr;
+  key_store->m_close_flag = true;
   Uint32 bytes_outstanding =
     key_store->m_num_current_rw_rows * DELETE_BYTES;
   assert(get_ctrl->m_num_bytes_outstanding >= bytes_outstanding);
   assert(get_ctrl->m_num_keys_outstanding > 0);
   get_ctrl->m_num_bytes_outstanding -= bytes_outstanding;
   get_ctrl->m_num_keys_outstanding--;
-  DEB_KS(("Key %u Commit Complex Delete, key_state: %u\n",
+  DEB_DEL_CMD(("Key %u Commit Complex Delete string_values, key_state: %u\n",
     key_store->m_index,
     key_store->m_key_state));
 }
@@ -166,9 +162,7 @@ complex_delete_callback(int result, NdbTransaction *trans, void *aObject) {
         get_ctrl->m_error_code = code;
       }
     }
-    get_ctrl->m_num_transactions--;
-    get_ctrl->m_ndb->closeTransaction(trans);
-    key_store->m_trans = nullptr;
+    key_store->m_close_flag = true;
   } else {
     Uint32 num_rows = key_store->m_key_row.num_rows;
     Uint64 rondb_key = key_store->m_key_row.rondb_key;
@@ -184,7 +178,7 @@ complex_delete_callback(int result, NdbTransaction *trans, void *aObject) {
   assert(get_ctrl->m_num_keys_outstanding > 0);
   get_ctrl->m_num_bytes_outstanding -= DELETE_BYTES;
   get_ctrl->m_num_keys_outstanding--;
-  DEB_KS(("Key %u Complex Delete, key_state: %u\n",
+  DEB_KS(("Key %u Complex Delete string_keys, key_state: %u\n",
     key_store->m_index,
     key_store->m_key_state));
 }
@@ -283,11 +277,9 @@ simple_delete_callback(int result, NdbTransaction *trans, void *aObject) {
     key_store->m_key_state = KeyState::CompletedSuccess;
     get_ctrl->m_num_keys_completed_first_pass++;
   }
-  get_ctrl->m_ndb->closeTransaction(trans);
+  key_store->m_close_flag = true;
   assert(get_ctrl->m_num_keys_outstanding > 0);
-  get_ctrl->m_num_transactions--;
   get_ctrl->m_num_keys_outstanding--;
-  key_store->m_trans = nullptr;
   DEB_DEL_CMD(("Key %u Simple Delete, key_state: %u\n",
     key_store->m_index,
     key_store->m_key_state));
@@ -331,6 +323,7 @@ write_commit_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_storage->m_get_ctrl;
   (void)result;
   assert(trans == key_storage->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   assert(key_storage->m_key_state == KeyState::MultiRowRWAll);
   int code = trans->getNdbError().code;
   if (code != 0) {
@@ -349,11 +342,8 @@ write_commit_callback(int result, NdbTransaction *trans, void *aObject) {
       key_storage->m_index));
   }
   assert(get_ctrl->m_num_keys_outstanding > 0);
-  assert(get_ctrl->m_num_transactions > 0);
   get_ctrl->m_num_keys_outstanding--;
-  get_ctrl->m_num_transactions--;
-  get_ctrl->m_ndb->closeTransaction(trans);
-  key_storage->m_trans = nullptr;
+  key_storage->m_close_flag = true;
 }
 
 void commit_write_value_transaction(struct KeyStorage *key_store) {
@@ -403,6 +393,7 @@ write_value_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_storage->m_get_ctrl;
   (void)result;
   assert(trans == key_storage->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   assert(key_storage->m_key_state == KeyState::MultiRowRWValueSent);
   int code = trans->getNdbError().code;
   if (code != 0) {
@@ -413,9 +404,7 @@ write_value_callback(int result, NdbTransaction *trans, void *aObject) {
     if (get_ctrl->m_error_code == 0) {
       get_ctrl->m_error_code = code;
     }
-    get_ctrl->m_num_transactions--;
-    get_ctrl->m_ndb->closeTransaction(trans);
-    key_storage->m_trans = nullptr;
+    key_storage->m_close_flag = true;
   } else {
     key_storage->m_key_state = KeyState::MultiRowRWValue;
     DEB_HSET_KEY(("key %u write value succeeded\n",
@@ -424,7 +413,6 @@ write_value_callback(int result, NdbTransaction *trans, void *aObject) {
       (key_storage->m_num_current_rw_rows * sizeof(struct value_table)));
     get_ctrl->m_num_bytes_outstanding -=
       (key_storage->m_num_current_rw_rows * sizeof(struct value_table));
-    assert(get_ctrl->m_num_transactions > 0);
   }
   assert(get_ctrl->m_num_keys_outstanding > 0);
   get_ctrl->m_num_keys_outstanding--;
@@ -442,6 +430,7 @@ write_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_storage->m_get_ctrl;
   (void)result;
   assert(trans == key_storage->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   int code = trans->getNdbError().code;
   if (code != 0) {
     key_storage->m_key_state = KeyState::CompletedFailed;
@@ -451,11 +440,8 @@ write_callback(int result, NdbTransaction *trans, void *aObject) {
       get_ctrl->m_error_code = code;
     }
     assert(get_ctrl->m_num_keys_outstanding > 0);
-    assert(get_ctrl->m_num_transactions > 0);
     get_ctrl->m_num_keys_outstanding--;
-    get_ctrl->m_num_transactions--;
-    get_ctrl->m_ndb->closeTransaction(trans);
-    key_storage->m_trans = nullptr;
+    key_storage->m_close_flag = true;
   } else {
     key_storage->m_prev_num_rows =
       key_storage->m_rec_attr_prev_num_rows->u_32_value();
@@ -463,7 +449,6 @@ write_callback(int result, NdbTransaction *trans, void *aObject) {
       key_storage->m_rec_attr_rondb_key->u_32_value();
     key_storage->m_current_pos = INLINE_VALUE_LEN;
     key_storage->m_key_state = KeyState::MultiRowRWValue;
-    assert(get_ctrl->m_num_transactions > 0);
     assert(get_ctrl->m_num_keys_outstanding > 0);
     get_ctrl->m_num_keys_outstanding--;
     DEB_HSET_KEY(("key %u simple write succeeded, prev_num_rows: %u"
@@ -486,6 +471,7 @@ simple_write_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_storage->m_get_ctrl;
   (void)result;
   assert(trans == key_storage->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   int code = trans->getNdbError().code;
   if (code != 0) {
     if (code == RESTRICT_VALUE_ROWS_ERROR) {
@@ -508,11 +494,8 @@ simple_write_callback(int result, NdbTransaction *trans, void *aObject) {
       key_storage->m_index));
   }
   assert(get_ctrl->m_num_keys_outstanding > 0);
-  assert(get_ctrl->m_num_transactions > 0);
   get_ctrl->m_num_keys_outstanding--;
-  get_ctrl->m_num_transactions--;
-  get_ctrl->m_ndb->closeTransaction(trans);
-  key_storage->m_trans = nullptr;
+  key_storage->m_close_flag = true;
 }
 
 void prepare_simple_write_transaction(struct KeyStorage *key_storage) {
@@ -618,14 +601,12 @@ static void
 value_callback(int result, NdbTransaction *trans, void *aObject) {
   struct KeyStorage *key_store = (struct KeyStorage*)aObject;
   struct GetControl *get_ctrl = key_store->m_get_ctrl;
-  assert(get_ctrl->m_num_transactions > 0);
   assert(trans == key_store->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   (void)result;
   if (key_store->m_key_state == KeyState::CompletedMultiRowSuccess) {
     /* Only commit of Locked Read performed here */
-    get_ctrl->m_ndb->closeTransaction(trans);
-    get_ctrl->m_num_transactions--;
-    key_store->m_trans = nullptr;
+    key_store->m_close_flag = true;
     assert(get_ctrl->m_num_keys_multi_rows > 0);
     get_ctrl->m_num_keys_multi_rows--;
     key_store->m_key_state = KeyState::CompletedSuccess;
@@ -645,10 +626,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
     if (get_ctrl->m_error_code == 0) {
       get_ctrl->m_error_code = code;
     }
-    get_ctrl->m_ndb->closeTransaction(trans);
-    assert(get_ctrl->m_num_transactions > 0);
-    get_ctrl->m_num_transactions--;
-    key_store->m_trans = nullptr;
+    key_store->m_close_flag = true;
     assert(get_ctrl->m_num_keys_multi_rows > 0);
     get_ctrl->m_num_keys_multi_rows--;
   } else {
@@ -674,10 +652,7 @@ value_callback(int result, NdbTransaction *trans, void *aObject) {
       key_store->m_key_state = KeyState::CompletedMultiRow;
       assert(get_ctrl->m_num_keys_multi_rows > 0);
       get_ctrl->m_num_keys_multi_rows--;
-      get_ctrl->m_ndb->closeTransaction(trans);
-      assert(get_ctrl->m_num_transactions > 0);
-      get_ctrl->m_num_transactions--;
-      key_store->m_trans = nullptr;
+      key_store->m_close_flag = true;
     } else {
       key_store->m_key_state = KeyState::MultiRowRWValue;
     }
@@ -747,8 +722,8 @@ static void
 read_callback(int result, NdbTransaction *trans, void *aObject) {
   struct KeyStorage *key_store = (struct KeyStorage*)aObject;
   struct GetControl *get_ctrl = key_store->m_get_ctrl;
-  assert(get_ctrl->m_num_transactions > 0);
   assert(trans == key_store->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   assert(key_store->m_key_state == KeyState::MultiRow);
   (void)result;
   int code = trans->getNdbError().code;
@@ -762,9 +737,7 @@ read_callback(int result, NdbTransaction *trans, void *aObject) {
         get_ctrl->m_error_code = code;
       }
     }
-    get_ctrl->m_ndb->closeTransaction(trans);
-    get_ctrl->m_num_transactions--;
-    key_store->m_trans = nullptr;
+    key_store->m_close_flag = true;
     assert(get_ctrl->m_num_keys_multi_rows > 0);
     get_ctrl->m_num_keys_multi_rows--;
   } else if (key_store->m_key_row.num_rows > 0) {
@@ -862,6 +835,7 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
   struct GetControl *get_ctrl = key_storage->m_get_ctrl;
   (void)result;
   assert(trans == key_storage->m_trans);
+  assert(get_ctrl->m_num_transactions > 0);
   int code = trans->getNdbError().code;
   if (code != 0) {
     key_storage->m_key_state = KeyState::CompletedFailed;
@@ -891,11 +865,8 @@ simple_read_callback(int result, NdbTransaction *trans, void *aObject) {
       key_storage->m_index, value_len));
   }
   assert(get_ctrl->m_num_keys_outstanding > 0);
-  assert(get_ctrl->m_num_transactions > 0);
   get_ctrl->m_num_keys_outstanding--;
-  get_ctrl->m_num_transactions--;
-  get_ctrl->m_ndb->closeTransaction(trans);
-  key_storage->m_trans = nullptr;
+  key_storage->m_close_flag = true;
 }
 
 void prepare_simple_read_transaction(struct KeyStorage *key_storage) {

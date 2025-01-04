@@ -8,6 +8,14 @@
 #include "string/commands.h"
 #include <strings.h>
 
+#define DEBUG_NDB_CMD 1
+
+#ifdef DEBUG_NDB_CMD
+#define DEB_NDB_CMD(arglist) do { printf arglist ; fflush(stdout); } while (0)
+#else
+#define DEB_NDB_CMD(arglist)
+#endif
+
 /**
  * Ndb objects are not thread-safe. Hence, each worker thread / RonDB
  * connection should have its own Ndb object. If we have more worker
@@ -142,6 +150,7 @@ int rondb_redis_handler(const pink::RedisCmdArgsType &argv,
     }
   } else {
     Ndb *ndb = ndb_objects[worker_id];
+    DEB_NDB_CMD(("ndb: %p, worker_id: %d\n", ndb, worker_id));
     if (strcasecmp(command, "GET") == 0) {
       if (argv.size() == 2) {
         rondb_get_command(ndb, argv, response);

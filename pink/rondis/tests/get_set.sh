@@ -71,11 +71,11 @@ redis-cli ping && echo
 echo "Testing empty string..."
 set_and_get "$KEY:empty" ""
 
-redis-cli DEL "$KEY:empty"
+#redis-cli DEL "$KEY:empty"
 
 echo "Testing small string..."
 set_and_get "$KEY:small" "hello"
-redis-cli DEL "$KEY:small"
+#redis-cli DEL "$KEY:small"
 
 # Minimal amount to create value rows: 30000
 for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
