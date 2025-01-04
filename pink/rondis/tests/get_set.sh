@@ -85,7 +85,6 @@ for NUM_CHARS in 100 10000 30000 50000 57000 60000 70000; do
 done
 echo "redis-cli DEL $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $KEY:70000"
 redis-cli DEL $KEY:100 $KEY:10000 $KEY:30000 $KEY:50000 $KEY:57000 $KEY:60000 $KEY:70000
-exit 0
 
 # echo "Testing xxl string (1,000,000 characters)..."
 # xxl_file=$(mktemp)
