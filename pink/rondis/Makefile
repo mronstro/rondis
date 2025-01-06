@@ -22,13 +22,6 @@ PINK_PATH=$(CURDIR)/../..
 PINK_INCLUDE_DIR=$(PINK_PATH)
 PINK_LIBRARY=$(PINK_PATH)/pink/lib/libpink.a
 
-ifndef SLASH_PATH
-  $(warning Warning: missing slash path, using default)
-	SLASH_PATH=$(CURDIR)/../third/slash
-endif
-SLASH_INCLUDE_DIR=$(SLASH_PATH)
-SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
-
 ifndef RONDB_PATH
   $(warning Warning: missing rondb path)
   $(error Exit due to missing RONDB_PATH)
@@ -40,9 +33,9 @@ else
 RONDB_LIBRARY=$(RONDB_PATH)/lib/libndbclient.so
 endif
 
-CXXFLAGS+= -I$(PINK_INCLUDE_DIR) -I$(SLASH_INCLUDE_DIR) -I$(RONDB_INCLUDE_DIR)
+CXXFLAGS+= -I$(PINK_INCLUDE_DIR) -I$(RONDB_INCLUDE_DIR)
 
-DEP_LIBS = $(PINK_LIBRARY) $(SLASH_LIBRARY) $(RONDB_LIBRARY)
+DEP_LIBS = $(PINK_LIBRARY) $(RONDB_LIBRARY)
 ifeq ($(UNAME_S),Darwin)
 DEP_LIBS+= /opt/homebrew/lib/libprotobuf.dylib
 endif
