@@ -13,13 +13,12 @@
 #include <netinet/tcp.h>
 
 
-#include "slash/include/xdebug.h"
+#include "pink/include/debug.h"
 #include "pink/src/pink_epoll.h"
 #include "pink/src/server_socket.h"
 
 namespace pink {
 
-using slash::Status;
 
 class DefaultServerHandle : public ServerHandle {
  public:
@@ -167,7 +166,6 @@ void ServerThread::ProcessNotifyEvents(const PinkFiredEvent* pfe) {
 void *ServerThread::ThreadMain() {
   int nfds;
   PinkFiredEvent *pfe;
-  Status s;
   struct sockaddr_in cliaddr;
   socklen_t clilen = sizeof(struct sockaddr);
   int fd, connfd;

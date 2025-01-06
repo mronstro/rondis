@@ -13,7 +13,7 @@
 #include <vector>
 #include <set>
 
-#include "slash/include/xdebug.h"
+#include "pink/include/debug.h"
 #include "slash/include/slash_mutex.h"
 
 #include "pink/include/server_thread.h"

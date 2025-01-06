@@ -11,8 +11,7 @@
 #include <string>
 #include <sstream>
 
-#include "slash/include/xdebug.h"
-#include "slash/include/slash_string.h"
+#include "pink/include/debug.h"
 
 namespace pink {
 

@@ -7,8 +7,7 @@
 
 #include <assert.h>     /* assert */
 
-#include "slash/include/slash_string.h"
-#include "slash/include/xdebug.h"
+#include "pink/include/debug.h"
 
 namespace pink {
 
@@ -149,12 +148,44 @@ int RedisParser::GetNextNum(int pos, long* value) {
   //      |    |
   //      *3\r\n
   // [cur_pos_ + 1, pos - cur_pos_ - 2]
-  if (slash::string2l(input_buf_ + cur_pos_ + 1,
-                            pos - cur_pos_ - 2,
-                            value)) {
-    return 0; // Success
+  if (value == nullptr)
+    return -1;
+  const char *start_ptr = input_buf_ + cur_pos_ + 1;
+  int len = pos - cur_pos_ - 2;
+  if (len == 0) {
+    return -1;
+  } else if (len == 1) {
+    if (start_ptr[0] >= '0' && start_ptr[0] <= '9') {
+      *value = start_ptr[0] - '0';
+      return 0;
+    } else {
+      return -1;
+    }
+  } else if (start_ptr[0] == '+' || start_ptr[0] == '-') {
+    if (len == 2) {
+      if (start_ptr[1] >= '0' && start_ptr[1] <= '9') {
+        *value = start_ptr[1] - '0';
+        return 0;
+      } else {
+        return -1;
+      }
+    } else if (start_ptr[1] >= '1' && start_ptr[1] <= '9') {
+      ; // ok to use strtol
+    } else {
+      return -1;
+    }
+  } else if (start_ptr[0] >= '1' && start_ptr[0] <= '9') {
+    ; // ok to use strtol
+  } else {
+    return -1;
   }
-  return -1; // Failed
+  char *end_ptr = nullptr;
+  const char *calc_end_ptr = start_ptr + len;
+  long ret_val = strtol(start_ptr, &end_ptr, 10);
+  if (end_ptr != calc_end_ptr || errno == ERANGE)
+    return -1; // Failed
+  *value = ret_val;
+  return 0; // Success
 }
 
 RedisParser::RedisParser()

@@ -12,7 +12,7 @@
 #include <fcntl.h>
 
 #include "pink/include/pink_define.h"
-#include "slash/include/xdebug.h"
+#include "pink/include/debug.h"
 
 namespace pink {
 
