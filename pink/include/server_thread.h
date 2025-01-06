@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <mutex>
 
 #ifdef __ENABLE_SSL
 #include <openssl/ssl.h>
@@ -17,8 +18,6 @@
 #include <openssl/err.h>
 #endif
 
-#include "slash/include/slash_status.h"
-#include "slash/include/slash_mutex.h"
 #include "pink/include/pink_define.h"
 #include "pink/include/pink_thread.h"
 

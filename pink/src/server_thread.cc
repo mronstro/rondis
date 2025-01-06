@@ -282,7 +282,7 @@ void *ServerThread::ThreadMain() {
 }
 
 #ifdef __ENABLE_SSL
-static std::vector<std::unique_ptr<slash::Mutex>> ssl_mutex_;
+static std::vector<std::unique_ptr<std::mutex>> ssl_mutex_;
 
 static void SSLLockingCallback(int mode, int type, const char* file, int line) {
   if (mode & CRYPTO_LOCK) {
@@ -305,7 +305,7 @@ int ServerThread::EnableSecurity(const std::string& cert_file,
   // 1. Create multithread mutex used by openssl
   ssl_mutex_.resize(CRYPTO_num_locks());
   for (auto& sm : ssl_mutex_) {
-    sm.reset(new slash::Mutex());
+    sm.reset(new std::mutex());
   }
   CRYPTO_set_locking_callback(SSLLockingCallback);
   CRYPTO_set_id_callback(SSLIdCallback);

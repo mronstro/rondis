@@ -16,7 +16,6 @@
 #endif
 
 #include "pink/src/pink_item.h"
-#include "slash/include/slash_mutex.h"
 
 namespace pink {
 
@@ -66,7 +65,7 @@ class PinkEpoll {
    * The PbItem queue is the fd queue, receive from dispatch thread
    */
   int queue_limit_;
-  slash::Mutex notify_queue_protector_;
+  std::mutex notify_queue_protector_;
   std::queue<PinkItem> notify_queue_;
 
   /*

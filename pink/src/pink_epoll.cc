@@ -138,14 +138,14 @@ int PinkEpoll::PinkDelEvent(const int fd, [[maybe_unused]] int mask) {
 
 bool PinkEpoll::Register(const PinkItem& it, bool force) {
   bool success = false;
-  notify_queue_protector_.Lock();
+  notify_queue_protector_.lock();
   if (force ||
       queue_limit_ == kUnlimitedQueue ||
       notify_queue_.size() < static_cast<size_t>(queue_limit_)) {
     notify_queue_.push(it);
     success = true;
   }
-  notify_queue_protector_.Unlock();
+  notify_queue_protector_.unlock();
   if (success) {
     int ret_code = write(notify_send_fd_, "", 1);
     if (ret_code < 0) success = false;
@@ -155,10 +155,10 @@ bool PinkEpoll::Register(const PinkItem& it, bool force) {
 
 PinkItem PinkEpoll::notify_queue_pop() {
   PinkItem it;
-  notify_queue_protector_.Lock();
+  notify_queue_protector_.lock();
   it = notify_queue_.front();
   notify_queue_.pop();
-  notify_queue_protector_.Unlock();
+  notify_queue_protector_.unlock();
   return it;
 }
 

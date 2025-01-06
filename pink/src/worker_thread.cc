@@ -4,6 +4,7 @@
 // of patent rights can be found in the PATENTS file in the same directory.
 
 #include <vector>
+#include <mutex>
 
 #include "pink/src/worker_thread.h"
 
@@ -34,13 +35,13 @@ WorkerThread::~WorkerThread() {
 }
 
 int WorkerThread::conn_num() const {
-  slash::ReadLock l(&rwlock_);
+  std::lock_guard<std::mutex> guard(wlock_);
   return conns_.size();
 }
 
 std::vector<ServerThread::ConnInfo> WorkerThread::conns_info() const {
   std::vector<ServerThread::ConnInfo> result;
-  slash::ReadLock l(&rwlock_);
+  std::lock_guard<std::mutex> guard(wlock_);
   for (auto& conn : conns_) {
     result.push_back({
                       conn.first,
@@ -52,7 +53,7 @@ std::vector<ServerThread::ConnInfo> WorkerThread::conns_info() const {
 }
 
 std::shared_ptr<PinkConn> WorkerThread::MoveConnOut(int fd) {
-  slash::WriteLock l(&rwlock_);
+  std::lock_guard<std::mutex> guard(wlock_);
   std::shared_ptr<PinkConn> conn = nullptr;
   auto iter = conns_.find(fd);
   if (iter != conns_.end()) {
@@ -68,7 +69,7 @@ bool WorkerThread::MoveConnIn(std::shared_ptr<PinkConn> conn, const NotifyType& 
   PinkItem it(conn->fd(), conn->ip_port(), notify_type);
   bool success = MoveConnIn(it, force);
   if (success) {
-    slash::WriteLock l(&rwlock_);
+    std::lock_guard<std::mutex> guard(wlock_);
     conns_[conn->fd()] = conn;
   }
   return success;
@@ -144,7 +145,7 @@ void *WorkerThread::ThreadMain() {
 #endif
 
                 {
-                  slash::WriteLock l(&rwlock_);
+                  std::lock_guard<std::mutex> guard(wlock_);
                   conns_[ti.fd()] = tc;
                 }
                 pink_epoll_->PinkAddEvent(ti.fd(), PinkEpoll::kRead);
@@ -173,7 +174,7 @@ void *WorkerThread::ThreadMain() {
         }
 
         {
-          slash::ReadLock l(&rwlock_);
+          std::lock_guard<std::mutex> guard(wlock_);
           std::map<int, std::shared_ptr<PinkConn>>::iterator iter = conns_.find(pfe->fd);
           if (iter == conns_.end()) {
             pink_epoll_->PinkDelEvent(pfe->fd, 0);
@@ -218,7 +219,7 @@ void *WorkerThread::ThreadMain() {
           CloseFd(in_conn);
           in_conn = NULL;
           {
-            slash::WriteLock l(&rwlock_);
+            std::lock_guard<std::mutex> guard(wlock_);
             conns_.erase(pfe->fd);
           }
           should_close = 0;
@@ -237,10 +238,10 @@ void WorkerThread::DoCronTask() {
   std::vector<std::shared_ptr<PinkConn>> to_close;
   std::vector<std::shared_ptr<PinkConn>> to_timeout;
   {
-    slash::WriteLock l(&rwlock_);
+    std::lock_guard<std::mutex> guard1(wlock_);
 
     // Check whether close all connection
-    slash::MutexLock kl(&killer_mutex_);
+    std::lock_guard<std::mutex> guard2(killer_mutex_);
     if (deleting_conn_ipport_.count(kKillAllConnsTask)) {
       for (auto& conn : conns_) {
         to_close.push_back(conn.second);
@@ -287,7 +288,7 @@ void WorkerThread::DoCronTask() {
 bool WorkerThread::TryKillConn(const std::string& ip_port) {
   bool find = false;
   if (ip_port != kKillAllConnsTask) {
-    slash::ReadLock l(&rwlock_);
+    std::lock_guard<std::mutex> guard(wlock_);
     for (auto& iter : conns_) {
       if (iter.second->ip_port() == ip_port) {
         find = true;
@@ -296,7 +297,7 @@ bool WorkerThread::TryKillConn(const std::string& ip_port) {
     }
   }
   if (find || ip_port == kKillAllConnsTask) {
-    slash::MutexLock l(&killer_mutex_);
+    std::lock_guard<std::mutex> guard(killer_mutex_);
     deleting_conn_ipport_.insert(ip_port);
     return true;
   }
@@ -313,7 +314,7 @@ void WorkerThread::CloseFd(std::shared_ptr<PinkConn> conn) {
 void WorkerThread::Cleanup() {
   std::map<int, std::shared_ptr<PinkConn>> to_close;
   {
-    slash::WriteLock l(&rwlock_);
+    std::lock_guard<std::mutex> guard(wlock_);
     to_close = std::move(conns_);
     conns_.clear();
   }

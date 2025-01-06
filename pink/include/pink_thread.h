@@ -9,8 +9,7 @@
 #include <pthread.h>
 #include <string>
 #include <atomic>
-
-#include "slash/include/slash_mutex.h"
+#include <mutex>
 
 namespace pink {
 
@@ -54,7 +53,7 @@ class Thread {
   static void* RunThread(void* arg);
   virtual void *ThreadMain() = 0;
 
-  slash::Mutex running_mu_;
+  std::mutex running_mu_;
   bool running_;
   pthread_t thread_id_;
   std::string thread_name_;

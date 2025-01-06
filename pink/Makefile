@@ -63,10 +63,6 @@ ifeq ($(NO_PB),1)
   				$(filter-out $(VERSION_CC) $(wildcard $(SRC_DIR)/pb_*), $(wildcard $(SRC_DIR)/*.cc))
 endif
 
-SLASH_PATH=$(CURDIR)/third/slash
-SLASH_INCLUDE_DIR=$(SLASH_PATH)
-SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
-
 AM_DEFAULT_VERBOSITY = 0
 
 AM_V_GEN = $(am__v_GEN_$(V))
@@ -106,7 +102,7 @@ ifndef DISABLE_WARNING_AS_ERROR
   WARNING_FLAGS += -Werror
 endif
 
-CXXFLAGS += $(WARNING_FLAGS) -I.. -I$(SLASH_INCLUDE_DIR) $(OPT)
+CXXFLAGS += $(WARNING_FLAGS) -I.. $(OPT)
 
 date := $(shell date +%F)
 git_sha := $(shell git rev-parse HEAD 2>/dev/null)
@@ -149,14 +145,11 @@ all: $(LIBRARY) rondis
 
 static_lib: $(LIBRARY)
 
-example:
-	@make -C examples PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
-
 rondis:
-	@make -C rondis PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
+	@make -C rondis PINK_PATH=$(CURDIR)/.. DEBUG_LEVEL=$(DEBUG_LEVEL)
 
 check: $(LIBRARY)
-	@make -C test PINK_PATH=$(CURDIR)/.. SLASH_PATH=$(SLASH_PATH)
+	@make -C test PINK_PATH=$(CURDIR)/..
 	for t in $(notdir $(TESTS)); do echo "***** Running $$t"; ./test/$$t || exit 1; done
 
 dbg: $(LIBRARY)
@@ -166,7 +159,6 @@ $(LIBRARY): $(LIBOBJECTS)
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS)
 
 clean:
-	make -C ./examples clean
 	make -C ./rondis clean
 	rm -f $(LIBRARY)
 	rm -rf $(CLEAN_FILES)
